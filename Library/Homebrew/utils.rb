@@ -13,7 +13,6 @@ require "utils/popen"
 require "utils/tty"
 
 def ohai(title, *sput)
-  title = Tty.truncate(title) if $stdout.tty? && !ARGV.verbose?
   puts Formatter.headline(title, color: :blue)
   puts sput
 end
