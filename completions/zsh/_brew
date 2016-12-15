@@ -177,17 +177,6 @@ _brew___version() {
   return 1
 }
 
-# brew analytics [state]
-# brew analytics (on|off)
-# brew analytics regenerate-uuid
-_brew_analytics() {
-  _values 'analytics' \
-    'off[turn off analytics]' \
-    'on[turn on analytics]' \
-    'regenerate-uuid[regenerate UUID used in analytics]' \
-    'state[display anonymous user behaviour analytics state]'
-}
-
 # brew aspell_dictionaries
 _brew_aspell_dictionaries() {
   return 1

@@ -11,7 +11,6 @@ module Homebrew
     HOMEBREW_LIBRARY_PATH.cd do
       ENV.delete "HOMEBREW_VERBOSE"
       ENV.delete "VERBOSE"
-      ENV["HOMEBREW_NO_ANALYTICS_THIS_RUN"] = "1"
       ENV["HOMEBREW_DEVELOPER"] = "1"
       ENV["TESTOPTS"] = "-v" if ARGV.verbose?
       ENV["HOMEBREW_NO_COMPAT"] = "1" if ARGV.include? "--no-compat"

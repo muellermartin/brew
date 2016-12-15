@@ -12,7 +12,6 @@ end
 
 repo_root = Pathname.new(__FILE__).realpath.parent.parent
 repo_root.cd do
-  ENV["HOMEBREW_NO_ANALYTICS_THIS_RUN"] = "1"
   ENV["HOMEBREW_NO_EMOJI"] = "1"
   ENV.delete("HOMEBREW_CASK_OPTS")
 
