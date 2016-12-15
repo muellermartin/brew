@@ -227,7 +227,6 @@ class FormulaInstaller
     if formula.tap && !formula.tap.private?
       category = "install"
       action = ([formula.full_name] + options).join(" ")
-      Utils::Analytics.report_event(category, action)
     end
 
     @@attempted << formula

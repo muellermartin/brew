@@ -89,12 +89,6 @@ __brew_complete_tapped() {
   __brewcomp "$taps"
 }
 
-_brew_analytics() {
-  case "$COMP_CWORD" in
-    2)  __brewcomp "off on regenerate-uuid state" ;;
-  esac
-}
-
 _brew_bottle() {
   local cur="${COMP_WORDS[COMP_CWORD]}"
   case "$cur" in
@@ -575,7 +569,6 @@ _brew() {
     --cache)                    __brew_complete_formulae ;;
     --cellar)                   __brew_complete_formulae ;;
     --prefix)                   __brew_complete_formulae ;;
-    analytics)                  _brew_analytics ;;
     audit)                      __brew_complete_formulae ;;
     bottle)                     _brew_bottle ;;
     cat)                        __brew_complete_formulae ;;
