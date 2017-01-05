@@ -146,7 +146,29 @@ class FormulaInstaller
     return if ignore_deps?
 
     recursive_deps = formula.recursive_dependencies
-    unlinked_deps = recursive_deps.map(&:to_formula).select do |dep|
+    recursive_formulae = recursive_deps.map(&:to_formula)
+
+    if ENV["HOMEBREW_CHECK_RECURSIVE_VERSION_DEPENDENCIES"]
+      version_hash = {}
+      version_conflicts = Set.new
+      recursive_formulae.each do |f|
+        name = f.name
+        unversioned_name, = name.split("@")
+        version_hash[unversioned_name] ||= Set.new
+        version_hash[unversioned_name] << name
+        next if version_hash[unversioned_name].length < 2
+        version_conflicts += version_hash[unversioned_name]
+      end
+      unless version_conflicts.empty?
+        raise CannotInstallFormulaError, <<-EOS.undent
+          #{formula.full_name} contains conflicting version recursive dependencies:
+            #{version_conflicts.to_a.join ", "}
+          View these with `brew deps --tree #{formula.full_name}`.
+        EOS
+      end
+    end
+
+    unlinked_deps = recursive_formulae.select do |dep|
       dep.installed? && !dep.keg_only? && !dep.linked_keg.directory?
     end
 
@@ -523,7 +545,7 @@ class FormulaInstaller
   def summary
     s = ""
     s << "#{Emoji.install_badge}  " if Emoji.enabled?
-    s << "#{formula.prefix}: #{formula.prefix.abv}"
+    s << "#{formula.prefix.resolved_path}: #{formula.prefix.abv}"
     s << ", built in #{pretty_duration build_time}" if build_time
     s
   end

@@ -198,6 +198,7 @@ class Formula
     @build = active_spec.build
     @pin = FormulaPin.new(self)
     @follow_installed_alias = true
+    @versioned_prefix = false
   end
 
   # @private
@@ -548,9 +549,16 @@ class Formula
   end
 
   # The directory in the cellar that the formula is installed to.
-  # This directory contains the formula's name and version.
+  # This directory points to {#opt_prefix} if it exists and if #{prefix} is not
+  # called from within the same formula's {#install} or {#post_install} methods.
+  # Otherwise, return the full path to the formula's versioned cellar.
   def prefix(v = pkg_version)
-    Pathname.new("#{HOMEBREW_CELLAR}/#{name}/#{v}")
+    prefix = rack/v
+    if !@versioned_prefix && prefix.directory? && Keg.new(prefix).optlinked?
+      opt_prefix
+    else
+      prefix
+    end
   end
 
   # Is the formula linked?
@@ -579,7 +587,7 @@ class Formula
   # installed versions of this software
   # @private
   def rack
-    prefix.parent
+    Pathname.new("#{HOMEBREW_CELLAR}/#{name}")
   end
 
   # All currently installed prefix directories.
@@ -994,6 +1002,7 @@ class Formula
 
   # @private
   def run_post_install
+    @versioned_prefix = true
     build = self.build
     self.build = Tab.for_formula(self)
     old_tmpdir = ENV["TMPDIR"]
@@ -1008,6 +1017,7 @@ class Formula
     ENV["TMPDIR"] = old_tmpdir
     ENV["TEMP"] = old_temp
     ENV["TMP"] = old_tmp
+    @versioned_prefix = false
   end
 
   # Tell the user about any caveats regarding this package.
@@ -1110,6 +1120,7 @@ class Formula
   # where staging is a Mktemp staging context
   # @private
   def brew
+    @versioned_prefix = true
     stage do |staging|
       staging.retain! if ARGV.keep_tmp?
       prepare_patches
@@ -1123,6 +1134,8 @@ class Formula
         cp Dir["config.log", "CMakeCache.txt"], logs
       end
     end
+  ensure
+    @versioned_prefix = false
   end
 
   # @private
@@ -1406,7 +1419,7 @@ class Formula
         Formulary.from_rack(rack)
       rescue FormulaUnavailableError, TapFormulaAmbiguityError, TapFormulaWithOldnameAmbiguityError
       end
-    end.compact
+    end.compact.uniq(&:name)
   end
 
   def self.installed_with_alias_path(alias_path)
@@ -1505,7 +1518,10 @@ class Formula
   # Returns a list of Dependency objects that are required at runtime.
   # @private
   def runtime_dependencies
-    recursive_dependencies.reject(&:build?)
+    recursive_dependencies do |_dependent, dependency|
+      Dependency.prune if dependency.build?
+      Dependency.prune if !dependency.required? && build.without?(dependency)
+    end
   end
 
   # Returns a list of formulae depended on by this formula that aren't
@@ -1621,6 +1637,7 @@ class Formula
 
   # @private
   def run_test
+    @versioned_prefix = true
     old_home = ENV["HOME"]
     old_curl_home = ENV["CURL_HOME"]
     old_tmpdir = ENV["TMPDIR"]
@@ -1652,6 +1669,7 @@ class Formula
     ENV["TEMP"] = old_temp
     ENV["TMP"] = old_tmp
     ENV["TERM"] = old_term
+    @versioned_prefix = false
   end
 
   # @private
@@ -2340,6 +2358,8 @@ class Formula
     #   version '4.8.1'
     # end</pre>
     def fails_with(compiler, &block)
+      # TODO: deprecate this in future.
+      # odeprecated "fails_with :llvm" if compiler == :llvm
       specs.each { |spec| spec.fails_with(compiler, &block) }
     end
 
