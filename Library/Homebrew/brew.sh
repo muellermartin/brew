@@ -194,7 +194,7 @@ do
   elif [[ $arg = "--ask" ]]
   then
     export HOMEBREW_ASK="1"
-    shift
+    set -- $(echo "$@" | sed 's/--ask //')
     break
   fi
 done
