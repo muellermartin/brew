@@ -10,14 +10,8 @@ def run_tests(executable, files, args = [])
   system "bundle", "exec", executable, *opts, "--", *args, "--", *files
 end
 
-<<<<<<< HEAD
-repo_root = Pathname.new(__FILE__).realpath.parent.parent
-repo_root.cd do
-=======
 cask_root = Pathname.new(__FILE__).realpath.parent.parent
 cask_root.cd do
-  ENV["HOMEBREW_NO_ANALYTICS_THIS_RUN"] = "1"
->>>>>>> b6f3399cb3facababf4f6b1e6f7821edc2db554a
   ENV["HOMEBREW_NO_EMOJI"] = "1"
   ENV.delete("HOMEBREW_CASK_OPTS")
 
