@@ -2,7 +2,23 @@
 Distillery is an attempt to fork Homebrew, a package manager for macOS.
 
 ## What Packages Are Available?
+<<<<<<< HEAD
 Currently it uses the packages from Homebrew.
+=======
+1. Type `brew search` for a list.
+2. Or visit [braumeister.org](http://braumeister.org) to browse packages online.
+3. Or use `brew search --desc <keyword>` to browse packages from the command line.
+
+## More Documentation
+`brew help`, `man brew` or check [our documentation](http://docs.brew.sh/).
+
+## Troubleshooting
+First, please run `brew update` and `brew doctor`.
+
+Second, read the [Troubleshooting Checklist](http://docs.brew.sh/Troubleshooting.html).
+
+**If you don't read these it will take us far longer to help you with your problem.**
+>>>>>>> b6f3399cb3facababf4f6b1e6f7821edc2db554a
 
 ## Contributing
 I'd love you to contribute to Distillery. First, please read the [Contribution Guide](https://github.com/muellermartin/distill/blob/master/CONTRIBUTING.md) and the [Code of Conduct](https://github.com/muellermartin/distill/blob/master/CODEOFCONDUCT.md#code-of-conduct).
