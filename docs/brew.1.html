@@ -449,13 +449,16 @@ the <code>prefix</code> and <code>repository</code> are the same directory.</p><
 <h2 id="DEVELOPER-COMMANDS">DEVELOPER COMMANDS</h2>
 
 <dl>
-<dt><code>audit</code> [<code>--strict</code>] [<code>--online</code>] [<code>--new-formula</code>] [<code>--display-cop-names</code>] [<code>--display-filename</code>] [<var>formulae</var>]</dt><dd><p>Check <var>formulae</var> for Homebrew coding style violations. This should be
+<dt><code>audit</code> [<code>--strict</code>] [<code>--fix</code>] [<code>--online</code>] [<code>--new-formula</code>] [<code>--display-cop-names</code>] [<code>--display-filename</code>] [<var>formulae</var>]</dt><dd><p>Check <var>formulae</var> for Homebrew coding style violations. This should be
 run before submitting a new formula.</p>
 
 <p>If no <var>formulae</var> are provided, all of them are checked.</p>
 
 <p>If <code>--strict</code> is passed, additional checks are run, including RuboCop
 style checks.</p>
+
+<p>If <code>--fix</code> is passed, style violations will be
+automatically fixed using RuboCop's <code>--auto-correct</code> feature.</p>
 
 <p>If <code>--online</code> is passed, additional slower checks that require a network
 connection are run.</p>
@@ -533,6 +536,7 @@ you to explicitly set the name and version of the package you are creating.</p>
 the specified tap.</p></dd>
 <dt class="flush"><code>edit</code></dt><dd><p>Open all of Homebrew for editing.</p></dd>
 <dt><code>edit</code> <var>formula</var></dt><dd><p>Open <var>formula</var> in the editor.</p></dd>
+<dt><code>formula</code> <var>formula</var></dt><dd><p>Display the path where <var>formula</var> is</p></dd>
 <dt><code>linkage</code> [<code>--test</code>] [<code>--reverse</code>]  <var>formula-name</var></dt><dd><p>Checks the library links of an installed formula.</p>
 
 <p>Only works on installed formulae. An error is raised if it is run on
@@ -606,7 +610,7 @@ launched with access to IRB or a shell inside the temporary test directory.</p>
 not deleted.</p>
 
 <p>Example: <code>brew install jruby &amp;&amp; brew test jruby</code></p></dd>
-<dt><code>tests</code> [<code>-v</code>] [<code>--coverage</code>] [<code>--generic</code>] [<code>--no-compat</code>] [<code>--only=</code><test_script/test_method>] [<code>--seed</code> <var>seed</var>] [<code>--trace</code>] [<code>--online</code>] [<code>--official-cmd-taps</code>]</dt><dd><p>Run Homebrew's unit and integration tests.</p></dd>
+<dt><code>tests</code> [<code>-v</code>] [<code>--coverage</code>] [<code>--generic</code>] [<code>--no-compat</code>] [<code>--only=</code>&lt;test_script:test_method>] [<code>--seed</code> <var>seed</var>] [<code>--trace</code>] [<code>--online</code>] [<code>--official-cmd-taps</code>]</dt><dd><p>Run Homebrew's unit and integration tests.</p></dd>
 <dt><code>update-test</code> [<code>--commit=&lt;commit></code>] [<code>--before=&lt;date></code>] [<code>--keep-tmp</code>]</dt><dd><p>Runs a test of <code>brew update</code> with a new repository clone.</p>
 
 <p>If no arguments are passed, use <code>origin/master</code> as the start commit.</p>
