@@ -81,12 +81,18 @@ module Homebrew
       exit 0 if choice.downcase == "n"
     end
 
+    formulae_installed_count = 0
+
     formulae_to_install.each do |f|
+      formulae_installed_count += 1
+      otitle "[#{formulae_installed_count}/#{formulae_to_install.length}] #{f.full_specified_name}"
       upgrade_formula(f)
       next unless ARGV.include?("--cleanup")
       next unless f.installed?
       Homebrew::Cleanup.cleanup_formula f
     end
+
+    otitle ""
   end
 
   def prompt(default, *args)
@@ -160,5 +166,6 @@ module Homebrew
     rescue
       nil
     end
+    otitle ""
   end
 end

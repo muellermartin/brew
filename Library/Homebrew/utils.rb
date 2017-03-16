@@ -14,6 +14,30 @@ require "utils/svn"
 require "utils/tty"
 require "time"
 
+
+# Ported from Gentoo's Portage "xtermTitle()"
+def otitle(title, raw = false)
+  supported_terms_re = /^(xterm|xterm-color|Eterm|aterm|rxvt|screen|kterm|rxvt-unicode|gnome|interix|tmux)/
+  max_term_title_len = 253
+
+  if !ENV["HOMEBREW_DISABLE_TERM_TITLE"]
+    if !(STDERR.tty? && !(ENV["TERM"] =~ supported_terms_re).nil?)
+      ENV["HOMEBREW_DISABLE_TERM_TITLE"] = "1"
+    else
+      ENV["HOMEBREW_DISABLE_TERM_TITLE"] = "0"
+    end
+  end
+
+  if ENV["HOMEBREW_DISABLE_TERM_TITLE"] == "0"
+    # If the title string is too big then the terminal can misbehave.
+    # Therefore, truncate it if it's too big.
+    title = title[0..max_term_title_len] if title.length > max_term_title_len
+    title = "\e]0;#{title}\a" if !raw
+
+    $stderr.print title
+  end
+end
+
 def ohai(title, *sput)
   puts Formatter.headline(title, color: :blue)
   puts sput
