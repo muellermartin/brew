@@ -91,9 +91,7 @@ module Homebrew
 
     return if problem_count.zero?
 
-    problems = "problem" + plural(problem_count)
-    formulae = "formula" + plural(formula_count, "e")
-    ofail "#{problem_count} #{problems} in #{formula_count} #{formulae}"
+    ofail "#{Formatter.pluralize(problem_count, "problem")} in #{Formatter.pluralize(formula_count, "formula")}"
   end
 end
 
@@ -174,30 +172,64 @@ class FormulaAuditor
     @specs = %w[stable devel head].map { |s| formula.send(s) }.compact
   end
 
-  def url_status_code(url, range: false)
-    # The system Curl is too old and unreliable with HTTPS homepages on
-    # Yosemite and below.
-    return "200" unless DevelopmentTools.curl_handles_most_https_homepages?
+  def self.check_http_content(url, user_agents: [:default])
+    return unless url.start_with? "http"
 
-    extra_args = [
-      "--connect-timeout", "15",
-      "--output", "/dev/null",
-      "--write-out", "%{http_code}"
-    ]
-    extra_args << "--range" << "0-0" if range
-    extra_args << url
-
-    status_code = nil
-    [:browser, :default].each do |user_agent|
-      args = curl_args(
-        extra_args: extra_args,
-        show_output: true,
-        user_agent: user_agent,
-      )
-      status_code = Open3.popen3(*args) { |_, stdout, _, _| stdout.read }
-      break if status_code.start_with? "20"
+    details = nil
+    user_agent = nil
+    user_agents.each do |ua|
+      details = http_content_headers_and_checksum(url, user_agent: ua)
+      user_agent = ua
+      break if details[:status].to_s.start_with?("2")
     end
-    status_code
+
+    return "The URL #{url} is not reachable" unless details[:status]
+    unless details[:status].start_with? "2"
+      return "The URL #{url} is not reachable (HTTP status code #{details[:status]})"
+    end
+
+    return unless url.start_with? "http:"
+
+    secure_url = url.sub "http", "https"
+    secure_details =
+      http_content_headers_and_checksum(secure_url, user_agent: user_agent)
+
+    if !details[:status].to_s.start_with?("2") ||
+       !secure_details[:status].to_s.start_with?("2")
+      return
+    end
+
+    etag_match = details[:etag] &&
+                 details[:etag] == secure_details[:etag]
+    content_length_match =
+      details[:content_length] &&
+      details[:content_length] == secure_details[:content_length]
+    file_match = details[:file_hash] == secure_details[:file_hash]
+
+    return if !etag_match && !content_length_match && !file_match
+    "The URL #{url} could use HTTPS rather than HTTP"
+  end
+
+  def self.http_content_headers_and_checksum(url, user_agent: :default)
+    args = curl_args(
+      extra_args: ["--connect-timeout", "15", "--include", url],
+      show_output: true,
+      user_agent: user_agent,
+    )
+    output = Open3.popen3(*args) { |_, stdout, _, _| stdout.read }
+
+    status_code = :unknown
+    while status_code == :unknown || status_code.to_s.start_with?("3")
+      headers, _, output = output.partition("\r\n\r\n")
+      status_code = headers[%r{HTTP\/.* (\d+)}, 1]
+    end
+
+    {
+      status: status_code,
+      etag: headers[%r{ETag: ([wW]\/)?"(([^"]|\\")*)"}, 2],
+      content_length: headers[/Content-Length: (\d+)/, 1],
+      file_hash: Digest::SHA256.digest(output),
+    }
   end
 
   def audit_style
@@ -294,6 +326,27 @@ class FormulaAuditor
     end
 
     problem "File should end with a newline" unless text.trailing_newline?
+
+    versioned_formulae = Dir[formula.path.to_s.gsub(/\.rb$/, "@*.rb")]
+    needs_versioned_alias = !versioned_formulae.empty? &&
+                            formula.tap &&
+                            formula.aliases.grep(/.@\d/).empty?
+    if needs_versioned_alias
+      _, last_alias_version = File.basename(versioned_formulae.sort.reverse.first)
+                                  .gsub(/\.rb$/, "")
+                                  .split("@")
+      major, minor, = formula.version.to_s.split(".")
+      alias_name = if last_alias_version.split(".").length == 1
+        "#{formula.name}@#{major}"
+      else
+        "#{formula.name}@#{major}.#{minor}"
+      end
+      problem <<-EOS.undent
+        Formula has other versions so create an alias:
+          cd #{formula.tap.alias_dir}
+          ln -s #{formula.path.to_s.gsub(formula.tap.path, "..")} #{alias_name}
+      EOS
+    end
 
     return unless @strict
 
@@ -410,7 +463,8 @@ class FormulaAuditor
           problem "Dependency '#{dep.name}' was renamed; use new name '#{dep_f.name}'."
         end
 
-        if @@aliases.include?(dep.name)
+        if @@aliases.include?(dep.name) &&
+           (core_formula? || !dep_f.versioned_formula?)
           problem "Dependency '#{dep.name}' is an alias; use the canonical name '#{dep.to_formula.full_name}'."
         end
 
@@ -463,14 +517,6 @@ class FormulaAuditor
   end
 
   def audit_conflicts
-    if formula.conflicts.any? && formula.versioned_formula?
-      problem <<-EOS
-        Versioned formulae should not use `conflicts_with`.
-        Use `keg_only :versioned_formula` instead.
-      EOS
-      return
-    end
-
     formula.conflicts.each do |c|
       begin
         Formulary.factory(c.name)
@@ -483,6 +529,15 @@ class FormulaAuditor
         problem "Ambiguous conflicting formula #{c.name.inspect}."
       end
     end
+
+    versioned_conflicts_whitelist = %w[node@ bash-completion@].freeze
+
+    return unless formula.conflicts.any? && formula.versioned_formula?
+    return if formula.name.start_with?(*versioned_conflicts_whitelist)
+    problem <<-EOS
+      Versioned formulae should not use `conflicts_with`.
+      Use `keg_only :versioned_formula` instead.
+    EOS
   end
 
   def audit_options
@@ -493,7 +548,7 @@ class FormulaAuditor
 
       next unless @strict
 
-      if o.name == "universal" && !Formula["wine"].recursive_dependencies.map(&:name).include?(formula.name)
+      if o.name == "universal"
         problem "macOS has been 64-bit only since 10.6 so universal options are deprecated."
       end
 
@@ -548,6 +603,11 @@ class FormulaAuditor
 
   def audit_homepage
     homepage = formula.homepage
+
+    if homepage.nil? || homepage.empty?
+      problem "Formula should have a homepage."
+      return
+    end
 
     unless homepage =~ %r{^https?://}
       problem "The homepage should start with http or https (URL is #{homepage})."
@@ -619,9 +679,11 @@ class FormulaAuditor
 
     return unless @online
 
-    status_code = url_status_code(homepage)
-    return if status_code.start_with? "20"
-    problem "The homepage #{homepage} is not reachable (HTTP status code #{status_code})"
+    return unless DevelopmentTools.curl_handles_most_https_homepages?
+    if http_content_problem = FormulaAuditor.check_http_content(homepage,
+                                             user_agents: [:browser, :default])
+      problem http_content_problem
+    end
   end
 
   def audit_bottle_spec
@@ -671,11 +733,11 @@ class FormulaAuditor
     %w[Stable Devel HEAD].each do |name|
       next unless spec = formula.send(name.downcase)
 
-      ra = ResourceAuditor.new(spec, online: @online).audit
+      ra = ResourceAuditor.new(spec, online: @online, strict: @strict).audit
       problems.concat ra.problems.map { |problem| "#{name}: #{problem}" }
 
       spec.resources.each_value do |resource|
-        ra = ResourceAuditor.new(resource, online: @online).audit
+        ra = ResourceAuditor.new(resource, online: @online, strict: @strict).audit
         problems.concat ra.problems.map { |problem|
           "#{name} resource #{resource.name.inspect}: #{problem}"
         }
@@ -690,6 +752,9 @@ class FormulaAuditor
       if version.to_s !~ /\d/
         problem "#{name}: version (#{version}) is set to a string without a digit"
       end
+      if version.to_s.start_with?("HEAD")
+        problem "#{name}: non-HEAD version name (#{version}) should not begin with HEAD"
+      end
     end
 
     if formula.stable && formula.devel
@@ -702,6 +767,7 @@ class FormulaAuditor
 
     unstable_whitelist = %w[
       aalib 1.4rc5
+      angolmois 2.0.0alpha2
       automysqlbackup 3.0-rc6
       aview 1.3.0rc1
       distcc 3.2rc1
@@ -709,6 +775,8 @@ class FormulaAuditor
       ftgl 2.1.3-rc5
       hidapi 0.8.0-rc1
       libcaca 0.99b19
+      nethack4 4.3.0-beta2
+      opensyobon 1.0rc2
       premake 4.4-beta5
       pwnat 0.3-beta
       pxz 4.999.9
@@ -861,7 +929,7 @@ class FormulaAuditor
       end
     end
 
-    if text =~ /xcodebuild[ (]["'*]/ && !text.include?("SYMROOT=")
+    if text =~ /xcodebuild[ (]*["'*]*/ && !text.include?("SYMROOT=")
       problem 'xcodebuild should be passed an explicit "SYMROOT"'
     end
 
@@ -1231,6 +1299,7 @@ class ResourceAuditor
     @using    = resource.using
     @specs    = resource.specs
     @online   = options[:online]
+    @strict   = options[:strict]
     @problems = []
   end
 
@@ -1490,38 +1559,30 @@ class ResourceAuditor
 
     return unless @online
     urls.each do |url|
-      check_insecure_mirror(url) if url.start_with? "http:"
+      next if !@strict && mirrors.include?(url)
+
+      strategy = DownloadStrategyDetector.detect(url, using)
+      if strategy <= CurlDownloadStrategy && !url.start_with?("file")
+        # A `brew mirror`'ed URL is usually not yet reachable at the time of
+        # pull request.
+        next if url =~ %r{^https://dl.bintray.com/homebrew/mirror/}
+        if http_content_problem = FormulaAuditor.check_http_content(url)
+          problem http_content_problem
+        end
+      elsif strategy <= GitDownloadStrategy
+        unless Utils.git_remote_exists url
+          problem "The URL #{url} is not a valid git URL"
+        end
+      elsif strategy <= SubversionDownloadStrategy
+        next unless DevelopmentTools.subversion_handles_most_https_certificates?
+        unless Utils.svn_remote_exists url
+          problem "The URL #{url} is not a valid svn URL"
+        end
+      end
     end
-  end
-
-  def check_insecure_mirror(url)
-    details =  get_content_details(url)
-    secure_url = url.sub "http", "https"
-    secure_details = get_content_details(secure_url)
-
-    return if !details[:status].start_with?("2") || !secure_details[:status].start_with?("2")
-
-    etag_match = details[:etag] && details[:etag] == secure_details[:etag]
-    content_length_match = details[:content_length] && details[:content_length] == secure_details[:content_length]
-    file_match = details[:file_hash] == secure_details[:file_hash]
-
-    return if !etag_match && !content_length_match && !file_match
-    problem "The URL #{url} could use HTTPS rather than HTTP"
   end
 
   def problem(text)
     @problems << text
-  end
-
-  def get_content_details(url)
-    out = {}
-    output, = curl_output "--connect-timeout", "15", "--include", url
-    split = output.partition("\r\n\r\n")
-    headers = split.first
-    out[:status] = headers[%r{HTTP\/.* (\d+)}, 1]
-    out[:etag] = headers[%r{ETag: ([wW]\/)?"(([^"]|\\")*)"}, 2]
-    out[:content_length] = headers[/Content-Length: (\d+)/, 1]
-    out[:file_hash] = Digest::SHA256.digest split.last
-    out
   end
 end
