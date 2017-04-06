@@ -75,6 +75,18 @@ module Homebrew
       puts pinned.map { |f| "#{f.full_specified_name} #{f.pkg_version}" } * ", "
     end
 
+    # Sort keg_only before non-keg_only formulae to avoid any needless conflicts
+    # with outdated, non-keg_only versions of formulae being upgraded.
+    formulae_to_install.sort! do |a, b|
+      if !a.keg_only? && b.keg_only?
+        1
+      elsif a.keg_only? && !b.keg_only?
+        -1
+      else
+        0
+      end
+    end
+
     if ENV["HOMEBREW_ASK"]
       choice = prompt "y", "Do you want to proceed [Y/n] "
 
@@ -86,6 +98,7 @@ module Homebrew
     formulae_to_install.each do |f|
       formulae_installed_count += 1
       otitle "[#{formulae_installed_count}/#{formulae_to_install.length}] #{f.full_specified_name}"
+      Migrator.migrate_if_needed(f)
       upgrade_formula(f)
       next unless ARGV.include?("--cleanup")
       next unless f.installed?

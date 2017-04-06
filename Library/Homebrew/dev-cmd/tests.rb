@@ -28,6 +28,7 @@ module Homebrew
       ENV.delete("HOMEBREW_VERBOSE")
       ENV.delete("VERBOSE")
       ENV.delete("HOMEBREW_CASK_OPTS")
+      ENV.delete("HOMEBREW_TEMP")
       ENV["HOMEBREW_DEVELOPER"] = "1"
       ENV["HOMEBREW_NO_COMPAT"] = "1" if ARGV.include? "--no-compat"
       ENV["HOMEBREW_TEST_GENERIC_OS"] = "1" if ARGV.include? "--generic"

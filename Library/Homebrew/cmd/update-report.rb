@@ -335,7 +335,10 @@ class Reporter
 
       case status
       when "A", "D"
-        @report[status.to_sym] << tap.formula_file_to_name(src)
+        full_name = tap.formula_file_to_name(src)
+        name = full_name.split("/").last
+        new_tap = tap.tap_migrations[name]
+        @report[status.to_sym] << full_name unless new_tap
       when "M"
         begin
           formula = Formulary.factory(tap.path/src)
@@ -473,9 +476,21 @@ class Reporter
   end
 
   def migrate_formula_rename
-    report[:R].each do |old_full_name, new_full_name|
-      old_name = old_full_name.split("/").last
-      next unless (dir = HOMEBREW_CELLAR/old_name).directory? && !dir.subdirs.empty?
+    Formula.installed.each do |formula|
+      next unless Migrator.needs_migration?(formula)
+
+      oldname = formula.oldname
+      oldname_rack = HOMEBREW_CELLAR/oldname
+
+      if oldname_rack.subdirs.empty?
+        oldname_rack.rmdir_if_possible
+        next
+      end
+
+      new_name = tap.formula_renames[oldname]
+      next unless new_name
+
+      new_full_name = "#{tap}/#{new_name}"
 
       begin
         f = Formulary.factory(new_full_name)
@@ -484,13 +499,7 @@ class Reporter
         next
       end
 
-      begin
-        migrator = Migrator.new(f)
-        migrator.migrate
-      rescue Migrator::MigratorDifferentTapsError
-      rescue Exception => e
-        onoe e
-      end
+      Migrator.migrate_if_needed(f)
     end
   end
 
@@ -547,14 +556,17 @@ class ReporterHub
   def dump_formula_report(key, title)
     formulae = select_formula(key).sort.map do |name, new_name|
       # Format list items of renamed formulae
-      if key == :R
+      case key
+      when :R
         name = pretty_installed(name) if installed?(name)
         new_name = pretty_installed(new_name) if installed?(new_name)
         "#{name} -> #{new_name}"
+      when :A
+        name unless installed?(name)
       else
         installed?(name) ? pretty_installed(name) : name
       end
-    end
+    end.compact
 
     return if formulae.empty?
     # Dump formula list.
