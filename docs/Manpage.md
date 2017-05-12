@@ -402,7 +402,7 @@ With `--verbose` or `-v`, many commands print extra debugging information. Note 
 
     If `--env=std` is passed, use the standard `PATH` instead of superenv's.
 
-  * `style` [`--fix`] [`--display-cop-names`] [`files`|`taps`|`formulae`]:
+  * `style` [`--fix`] [`--display-cop-names`] [`--only-cops=`[COP1,COP2..]|`--except-cops=`[COP1,COP2..]] [`files`|`taps`|`formulae`]:
     Check formulae or files for conformance to Homebrew style guidelines.
 
     `formulae` and `files` may not be combined. If both are omitted, style will run
@@ -414,6 +414,10 @@ With `--verbose` or `-v`, many commands print extra debugging information. Note 
 
     If `--display-cop-names` is passed, the RuboCop cop name for each violation
     is included in the output.
+
+    If `--only-cops` is passed, only the given Rubocop cop(s)' violations would be checked.
+
+    If `--except-cops` is passed, the given Rubocop cop(s)' checks would be skipped.
 
     Exits with a non-zero status if any style violations are found.
 
@@ -606,7 +610,7 @@ With `--verbose` or `-v`, many commands print extra debugging information. Note 
 
 ## DEVELOPER COMMANDS
 
-  * `audit` [`--strict`] [`--fix`] [`--online`] [`--new-formula`] [`--display-cop-names`] [`--display-filename`] [`formulae`]:
+  * `audit` [`--strict`] [`--fix`] [`--online`] [`--new-formula`] [`--display-cop-names`] [`--display-filename`] [`--only=``method`|`--except=``method`] [`--only-cops=`[COP1,COP2..]|`--except-cops=`[COP1,COP2..]] [`formulae`]:
     Check `formulae` for Homebrew coding style violations. This should be
     run before submitting a new formula.
 
@@ -630,6 +634,14 @@ With `--verbose` or `-v`, many commands print extra debugging information. Note 
 
     If `--display-filename` is passed, every line of output is prefixed with the
     name of the file or formula being audited, to make the output easy to grep.
+
+    If `--only` is passed, only the methods named `audit_`method`` will be run.
+
+    If `--except` is passed, the methods named `audit_`method`` will not be run.
+
+    If `--only-cops` is passed, only the given Rubocop cop(s)' violations would be checked.
+
+    If `--except-cops` is passed, the given Rubocop cop(s)' checks would be skipped.
 
     `audit` exits with a non-zero status if any errors are found. This is useful,
     for instance, for implementing pre-commit hooks.
@@ -709,7 +721,8 @@ With `--verbose` or `-v`, many commands print extra debugging information. Note 
     If `--meson` is passed, create a basic template for a Meson-style build.
 
     If `--no-fetch` is passed, Homebrew will not download `URL` to the cache and
-    will thus not add the SHA256 to the formula for you.
+    will thus not add the SHA256 to the formula for you. It will also not check
+    the GitHub API for GitHub projects (to fill out the description and homepage).
 
     The options `--set-name` and `--set-version` each take an argument and allow
     you to explicitly set the name and version of the package you are creating.
@@ -1072,7 +1085,7 @@ Homebrew's lead maintainer is Mike McQuaid.
 
 Homebrew's current maintainers are Alyssa Ross, Andrew Janke, Baptiste Fontaine, Alex Dunn, FX Coudert, ilovezfs, Josh Hagins, JCount, Misty De Meo, neutric, Tomasz Pajor, Markus Reiter, Tim Smith, Tom Schoonjans, Uladzislau Shablinski and William Woodruff.
 
-Former maintainers with significant contributions include Xu Cheng, Martin Afanasjew, Dominyk Tiller, Brett Koonce, Jack Nagel, Adam Vandenberg and Homebrew's creator: Max Howell.
+Former maintainers with significant contributions include Xu Cheng, Martin Afanasjew, Dominyk Tiller, Brett Koonce, Charlie Sharpsteen, Jack Nagel, Adam Vandenberg and Homebrew's creator: Max Howell.
 
 ## BUGS
 
