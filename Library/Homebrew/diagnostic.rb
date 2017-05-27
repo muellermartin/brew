@@ -100,7 +100,7 @@ module Homebrew
 
       # See https://github.com/Homebrew/legacy-homebrew/pull/9986
       def check_path_for_trailing_slashes
-        bad_paths = PATH.new(ENV["PATH"]).select { |p| p.end_with?("/") }
+        bad_paths = PATH.new(ENV["HOMEBREW_PATH"]).select { |p| p.end_with?("/") }
         return if bad_paths.empty?
 
         inject_file_list bad_paths, <<-EOS.undent
@@ -119,7 +119,7 @@ module Homebrew
         return unless which("python")
 
         anaconda_directory = which("anaconda").realpath.dirname
-        python_binary = Utils.popen_read which("python"), "-c", "import sys; sys.stdout.write(sys.executable)"
+        python_binary = Utils.popen_read(which("python"), "-c", "import sys; sys.stdout.write(sys.executable)")
         python_directory = Pathname.new(python_binary).realpath.dirname
 
         # Only warn if Python lives with Anaconda, since is most problematic case.

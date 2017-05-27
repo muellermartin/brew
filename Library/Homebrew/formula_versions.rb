@@ -36,7 +36,7 @@ class FormulaVersions
 
     begin
       Homebrew.raise_deprecation_exceptions = true
-      nostdout { yield Formulary.from_contents(name, path, contents) }
+      yield nostdout { Formulary.from_contents(name, path, contents) }
     rescue *IGNORED_EXCEPTIONS => e
       # We rescue these so that we can skip bad versions and
       # continue walking the history
@@ -60,6 +60,26 @@ class FormulaVersions
       end
       return map if versions_seen > MAX_VERSIONS_DEPTH
     end
+    map
+  end
+
+  def previous_version_and_checksum(branch)
+    map = {}
+
+    rev_list(branch) do |rev|
+      formula_at_revision(rev) do |f|
+        [:stable, :devel].each do |spec_sym|
+          next unless spec = f.send(spec_sym)
+          map[spec_sym] ||= { version: spec.version, checksum: spec.checksum }
+        end
+      end
+
+      break if map[:stable] || map[:devel]
+    end
+
+    map[:stable] ||= {}
+    map[:devel] ||= {}
+
     map
   end
 

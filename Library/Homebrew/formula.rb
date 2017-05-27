@@ -1553,11 +1553,11 @@ class Formula
   def missing_dependencies(hide: nil)
     hide ||= []
     missing_dependencies = recursive_dependencies do |dependent, dep|
-      if dep.optional? || dep.recommended?
+      if dep.build?
+        Dependency.prune
+      elsif dep.optional? || dep.recommended?
         tab = Tab.for_formula(dependent)
         Dependency.prune unless tab.with?(dep)
-      elsif dep.build?
-        Dependency.prune
       end
     end
 
@@ -1673,11 +1673,13 @@ class Formula
     old_temp = ENV["TEMP"]
     old_tmp = ENV["TMP"]
     old_term = ENV["TERM"]
-    old_path = ENV["HOMEBREW_PATH"]
+    old_path = ENV["PATH"]
+    old_homebrew_path = ENV["HOMEBREW_PATH"]
 
     ENV["CURL_HOME"] = old_curl_home || old_home
     ENV["TMPDIR"] = ENV["TEMP"] = ENV["TMP"] = HOMEBREW_TEMP
     ENV["TERM"] = "dumb"
+    ENV["PATH"] = PATH.new(old_path).append(HOMEBREW_PREFIX/"bin")
     ENV["HOMEBREW_PATH"] = nil
 
     ENV.clear_sensitive_environment!
@@ -1704,7 +1706,8 @@ class Formula
     ENV["TEMP"] = old_temp
     ENV["TMP"] = old_tmp
     ENV["TERM"] = old_term
-    ENV["HOMEBREW_PATH"] = old_path
+    ENV["PATH"] = old_path
+    ENV["HOMEBREW_PATH"] = old_homebrew_path
     @prefix_returns_versioned_prefix = false
   end
 
@@ -1943,8 +1946,10 @@ class Formula
       old_curl_home = ENV["CURL_HOME"]
       old_path = ENV["HOMEBREW_PATH"]
 
-      ENV["HOME"] = env_home
-      ENV["CURL_HOME"] = old_curl_home || old_home
+      unless ARGV.interactive?
+        ENV["HOME"] = env_home
+        ENV["CURL_HOME"] = old_curl_home || old_home
+      end
       ENV["HOMEBREW_PATH"] = nil
 
       setup_home env_home
@@ -1955,8 +1960,10 @@ class Formula
         yield staging
       ensure
         @buildpath = nil
-        ENV["HOME"] = old_home
-        ENV["CURL_HOME"] = old_curl_home
+        unless ARGV.interactive?
+          ENV["HOME"] = old_home
+          ENV["CURL_HOME"] = old_curl_home
+        end
         ENV["HOMEBREW_PATH"] = old_path
       end
     end
@@ -1993,7 +2000,7 @@ class Formula
 
   # The methods below define the formula DSL.
   class << self
-    include BuildEnvironmentDSL
+    include BuildEnvironment::DSL
 
     # The reason for why this software is not linked (by default) to
     # {::HOMEBREW_PREFIX}.
@@ -2362,7 +2369,7 @@ class Formula
     end
 
     # If this formula conflicts with another one.
-    # <pre>conflicts_with "imagemagick", :because => "because this is just a stupid example"</pre>
+    # <pre>conflicts_with "imagemagick", :because => "because both install 'convert' binaries"</pre>
     def conflicts_with(*names)
       opts = names.last.is_a?(Hash) ? names.pop : {}
       names.each { |name| conflicts << FormulaConflict.new(name, opts[:because]) }

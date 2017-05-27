@@ -97,7 +97,7 @@ def odeprecated(method, replacement = nil, disable: false, disable_on: nil, call
   backtrace = caller
   tap_message = nil
   caller_message = backtrace.detect do |line|
-    next unless line =~ %r{^#{Regexp.escape HOMEBREW_LIBRARY}/Taps/([^/]+/[^/]+)/}
+    next unless line =~ %r{^#{Regexp.escape(HOMEBREW_LIBRARY)}/Taps/([^/]+/[^/]+)/}
     tap = Tap.fetch $1
     tap_message = "\nPlease report this to the #{tap} tap!"
     true
@@ -342,7 +342,7 @@ def which_all(cmd, path = ENV["PATH"])
 end
 
 def which_editor
-  editor = ENV.values_at("HOMEBREW_EDITOR", "VISUAL").compact.reject(&:empty?).first
+  editor = ENV.values_at("HOMEBREW_EDITOR", "HOMEBREW_VISUAL").compact.reject(&:empty?).first
   if editor
     editor_name, _, editor_args = editor.partition " "
     editor_path = which(editor_name, ENV["HOMEBREW_PATH"])
@@ -378,7 +378,7 @@ def exec_editor(*args)
 end
 
 def exec_browser(*args)
-  browser = ENV["HOMEBREW_BROWSER"] || ENV["BROWSER"]
+  browser = ENV["HOMEBREW_BROWSER"]
   browser ||= OS::PATH_OPEN if defined?(OS::PATH_OPEN)
   return unless browser
   safe_exec(browser, *args)
