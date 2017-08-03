@@ -61,7 +61,7 @@ class Requirement
 
     if parent = satisfied_result_parent
       parent.to_s =~ %r{(#{Regexp.escape(HOMEBREW_CELLAR)}|#{Regexp.escape(HOMEBREW_PREFIX)}/opt)/([\w+-.@]+)}
-      @formula = $2
+      @formula = Regexp.last_match(2)
     end
 
     true
@@ -129,8 +129,10 @@ class Requirement
     !@formula.nil?
   end
 
-  def to_dependency
-    if formula =~ HOMEBREW_TAP_FORMULA_REGEX
+  def to_dependency(use_default_formula: false)
+    if use_default_formula && default_formula?
+      Dependency.new(self.class.default_formula, tags, method(:modify_build_environment), name)
+    elsif formula =~ HOMEBREW_TAP_FORMULA_REGEX
       TapDependency.new(formula, tags, method(:modify_build_environment), name)
     elsif formula
       Dependency.new(formula, tags, method(:modify_build_environment), name)

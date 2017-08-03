@@ -14,6 +14,13 @@ require "utils/svn"
 require "utils/tty"
 require "time"
 
+def require?(path)
+  return false if path.nil?
+  require path
+rescue LoadError => e
+  # we should raise on syntax errors but not if the file doesn't exist.
+  raise unless e.message.include?(path)
+end
 
 # Ported from Gentoo's Portage "xtermTitle()"
 def otitle(title, raw = false)
@@ -98,7 +105,7 @@ def odeprecated(method, replacement = nil, disable: false, disable_on: nil, call
   tap_message = nil
   caller_message = backtrace.detect do |line|
     next unless line =~ %r{^#{Regexp.escape(HOMEBREW_LIBRARY)}/Taps/([^/]+/[^/]+)/}
-    tap = Tap.fetch $1
+    tap = Tap.fetch Regexp.last_match(1)
     tap_message = "\nPlease report this to the #{tap} tap!"
     true
   end
@@ -173,9 +180,9 @@ def interactive_shell(f = nil)
 
   Process.wait fork { exec ENV["SHELL"] }
 
-  return if $?.success?
-  raise "Aborted due to non-zero exit status (#{$?.exitstatus})" if $?.exited?
-  raise $?.inspect
+  return if $CHILD_STATUS.success?
+  raise "Aborted due to non-zero exit status (#{$CHILD_STATUS.exitstatus})" if $CHILD_STATUS.exited?
+  raise $CHILD_STATUS.inspect
 end
 
 module Homebrew
@@ -193,11 +200,11 @@ module Homebrew
       exit! 1 # never gets here unless exec failed
     end
     Process.wait(pid)
-    $?.success?
+    $CHILD_STATUS.success?
   end
 
   def system(cmd, *args)
-    puts "#{cmd} #{args*" "}" if ARGV.verbose?
+    puts "#{cmd} #{args * " "}" if ARGV.verbose?
     _system(cmd, *args)
   end
 
@@ -284,6 +291,14 @@ ensure
   ENV["PATH"] = old_path
 end
 
+def with_homebrew_path
+  old_path = ENV["PATH"]
+  ENV["PATH"] = ENV["HOMEBREW_PATH"]
+  yield
+ensure
+  ENV["PATH"] = old_path
+end
+
 def with_custom_locale(locale)
   old_locale = ENV["LC_ALL"]
   ENV["LC_ALL"] = locale
@@ -293,10 +308,9 @@ ensure
 end
 
 def run_as_not_developer(&_block)
-  old = ENV.delete "HOMEBREW_DEVELOPER"
-  yield
-ensure
-  ENV["HOMEBREW_DEVELOPER"] = old
+  with_env "HOMEBREW_DEVELOPER" => nil do
+    yield
+  end
 end
 
 # Kernel.system but with exceptions
@@ -342,25 +356,16 @@ def which_all(cmd, path = ENV["PATH"])
 end
 
 def which_editor
-  editor = ENV.values_at("HOMEBREW_EDITOR", "HOMEBREW_VISUAL").compact.reject(&:empty?).first
-  if editor
-    editor_name, _, editor_args = editor.partition " "
-    editor_path = which(editor_name, ENV["HOMEBREW_PATH"])
-    editor = if editor_args.to_s.empty?
-      editor_path.to_s
-    else
-      "#{editor_path} #{editor_args}"
-    end
-    return editor
-  end
+  editor = ENV.values_at("HOMEBREW_EDITOR", "HOMEBREW_VISUAL")
+              .compact
+              .reject(&:empty?)
+              .first
+  return editor if editor
 
-  # Find Textmate
-  editor = which("mate", ENV["HOMEBREW_PATH"])
-  # Find BBEdit / TextWrangler
-  editor ||= which("edit", ENV["HOMEBREW_PATH"])
-  # Find vim
-  editor ||= which("vim", ENV["HOMEBREW_PATH"])
-  # Default to standard vim
+  # Find Atom, Sublime Text, Textmate, BBEdit / TextWrangler, or vim
+  editor = %w[atom subl mate edit vim].find do |candidate|
+    candidate if which(candidate, ENV["HOMEBREW_PATH"])
+  end
   editor ||= "/usr/bin/vim"
 
   opoo <<-EOS.undent
@@ -369,12 +374,12 @@ def which_editor
     or HOMEBREW_EDITOR to your preferred text editor.
   EOS
 
-  editor.to_s
+  editor
 end
 
 def exec_editor(*args)
   puts "Editing #{args.join "\n"}"
-  safe_exec(which_editor, *args)
+  with_homebrew_path { safe_exec(which_editor, *args) }
 end
 
 def exec_browser(*args)
@@ -547,4 +552,32 @@ def migrate_legacy_keg_symlinks_if_necessary
     FileUtils.ln_sf(src.relative_path_from(dst.parent), dst)
   end
   FileUtils.rm_rf legacy_pinned_kegs
+end
+
+# Calls the given block with the passed environment variables
+# added to ENV, then restores ENV afterwards.
+# Example:
+# with_env "PATH" => "/bin" do
+#   system "echo $PATH"
+# end
+#
+# Note that this method is *not* thread-safe - other threads
+# which happen to be scheduled during the block will also
+# see these environment variables.
+def with_env(hash)
+  old_values = {}
+  begin
+    hash.each do |key, value|
+      old_values[key] = ENV.delete(key)
+      ENV[key] = value
+    end
+
+    yield if block_given?
+  ensure
+    ENV.update(old_values)
+  end
+end
+
+def shell_profile
+  Utils::Shell.profile
 end

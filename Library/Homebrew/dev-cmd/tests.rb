@@ -12,10 +12,8 @@
 #:    If `--no-compat` is passed, do not load the compatibility layer when
 #:    running tests.
 #:
-#:    If `--online` is passed, include tests that use the GitHub API.
-#:
-#:    If `--official-cmd-taps` is passed, include tests that use any of the
-#:    taps for official external commands.
+#:    If `--online` is passed, include tests that use the GitHub API and tests
+#:    that use any of the taps for official external commands.
 
 require "fileutils"
 require "tap"
@@ -39,10 +37,6 @@ module Homebrew
         ENV["HOMEBREW_NO_GITHUB_API"] = "1"
       end
 
-      if ARGV.include? "--official-cmd-taps"
-        ENV["HOMEBREW_TEST_OFFICIAL_CMD_TAPS"] = "1"
-      end
-
       if ARGV.include? "--coverage"
         ENV["HOMEBREW_TESTS_COVERAGE"] = "1"
         FileUtils.rm_f "test/coverage/.resultset.json"
@@ -59,9 +53,7 @@ module Homebrew
       end
 
       Homebrew.install_gem_setup_path! "bundler"
-      unless quiet_system("bundle", "check")
-        system "bundle", "install"
-      end
+      system "bundle", "install" unless quiet_system("bundle", "check")
 
       parallel = true
 
@@ -90,12 +82,12 @@ module Homebrew
       end
 
       args = ["-I", HOMEBREW_LIBRARY_PATH/"test"]
-      args += %w[
+      args += %W[
         --color
         --require spec_helper
         --format progress
         --format ParallelTests::RSpec::RuntimeLogger
-        --out tmp/parallel_runtime_rspec.log
+        --out #{HOMEBREW_CACHE}/tests/parallel_runtime_rspec.log
       ]
 
       args << "--seed" << ARGV.next if ARGV.include? "--seed"
@@ -115,7 +107,7 @@ module Homebrew
         system "bundle", "exec", "rspec", *args, "--", *files
       end
 
-      return if $?.success?
+      return if $CHILD_STATUS.success?
       Homebrew.failed = true
     end
   end

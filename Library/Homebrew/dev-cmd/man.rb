@@ -63,8 +63,14 @@ module Homebrew
     variables[:commands] = path_glob_commands("#{HOMEBREW_LIBRARY_PATH}/cmd/*.{rb,sh}")
     variables[:developer_commands] = path_glob_commands("#{HOMEBREW_LIBRARY_PATH}/dev-cmd/*.{rb,sh}")
     readme = HOMEBREW_REPOSITORY/"README.md"
-    variables[:former_maintainers] = readme.read[/(former maintainers: .*\.)/, 1]
-                                           .gsub(/\[([^\]]+)\]\([^)]+\)/, '\1').sub(/^./, &:upcase)
+    variables[:lead_maintainer] = readme.read[/(Homebrew's lead maintainer .*\.)/, 1]
+                                        .gsub(/\[([^\]]+)\]\([^)]+\)/, '\1')
+    variables[:core_maintainer] = readme.read[%r{(Homebrew/homebrew-core's lead maintainer .*\.)}, 1]
+                                        .gsub(/\[([^\]]+)\]\([^)]+\)/, '\1')
+    variables[:maintainers] = readme.read[/(Homebrew's other current maintainers .*\.)/, 1]
+                                    .gsub(/\[([^\]]+)\]\([^)]+\)/, '\1')
+    variables[:former_maintainers] = readme.read[/(Former maintainers .*\.)/, 1]
+                                           .gsub(/\[([^\]]+)\]\([^)]+\)/, '\1')
 
     ERB.new(template, nil, ">").result(variables.instance_eval { binding })
   end
@@ -83,7 +89,7 @@ module Homebrew
     date = if ARGV.include?("--fail-if-changed") &&
               target.extname == ".1" && target.exist?
       /"(\d{1,2})" "([A-Z][a-z]+) (\d{4})" "#{organisation}" "#{manual}"/ =~ target.read
-      Date.parse("#{$1} #{$2} #{$3}")
+      Date.parse("#{Regexp.last_match(1)} #{Regexp.last_match(2)} #{Regexp.last_match(3)}")
     else
       Date.today
     end

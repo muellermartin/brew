@@ -1,4 +1,6 @@
+require "forwardable"
 require "extend/module"
+require "extend/predicable"
 require "extend/fileutils"
 require "extend/pathname"
 require "extend/git_repository"
@@ -12,6 +14,7 @@ require "set"
 require "rbconfig"
 require "official_taps"
 require "pp"
+require "English"
 
 ARGV.extend(HomebrewArgvExtension)
 

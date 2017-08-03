@@ -1,5 +1,3 @@
-require "English"
-
 module Hbc
   class CLI
     class Style < AbstractCommand
@@ -11,7 +9,8 @@ module Hbc
 
       def run
         install_rubocop
-        system "rubocop", *rubocop_args, "--", *cask_paths
+        cache_env = { "XDG_CACHE_HOME" => "#{HOMEBREW_CACHE}/style" }
+        system(cache_env, "rubocop", *rubocop_args, "--", *cask_paths)
         raise CaskError, "style check failed" unless $CHILD_STATUS.success?
         true
       end
@@ -32,7 +31,7 @@ module Hbc
         elsif args.any? { |file| File.exist?(file) }
           args
         else
-          args.map { |token| CaskLoader.path(token) }
+          casks.map(&:sourcefile_path)
         end
       end
 

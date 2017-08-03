@@ -23,7 +23,7 @@ class Tab < OpenStruct
       "homebrew_version" => HOMEBREW_VERSION,
       "used_options" => build.used_options.as_flags,
       "unused_options" => build.unused_options.as_flags,
-      "tabfile" => formula.prefix.join(FILENAME),
+      "tabfile" => formula.prefix/FILENAME,
       "built_as_bottle" => build.bottle?,
       "installed_as_dependency" => false,
       "installed_on_request" => true,
@@ -33,6 +33,7 @@ class Tab < OpenStruct
       "HEAD" => HOMEBREW_REPOSITORY.git_head,
       "compiler" => compiler,
       "stdlib" => stdlib,
+      "aliases" => formula.aliases,
       "runtime_dependencies" => formula.runtime_dependencies.map do |dep|
         f = dep.to_formula
         { "full_name" => f.full_name, "version" => f.version.to_s }
@@ -98,7 +99,7 @@ class Tab < OpenStruct
   end
 
   def self.for_keg(keg)
-    path = keg.join(FILENAME)
+    path = keg/FILENAME
 
     tab = if path.exist?
       from_file(path)
@@ -145,7 +146,7 @@ class Tab < OpenStruct
 
     paths << f.installed_prefix
 
-    path = paths.map { |pn| pn.join(FILENAME) }.find(&:file?)
+    path = paths.map { |pn| pn/FILENAME }.find(&:file?)
 
     if path
       tab = from_file(path)
@@ -185,6 +186,7 @@ class Tab < OpenStruct
       "HEAD" => nil,
       "stdlib" => nil,
       "compiler" => DevelopmentTools.default_compiler,
+      "aliases" => [],
       "runtime_dependencies" => [],
       "source" => {
         "path" => nil,
@@ -328,6 +330,7 @@ class Tab < OpenStruct
       "HEAD" => self.HEAD,
       "stdlib" => (stdlib.to_s if stdlib),
       "compiler" => (compiler.to_s if compiler),
+      "aliases" => aliases,
       "runtime_dependencies" => runtime_dependencies,
       "source" => source,
     }

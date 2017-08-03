@@ -1,5 +1,3 @@
-require "forwardable"
-
 require "hbc/dsl"
 require "hbc/metadata"
 
@@ -66,12 +64,21 @@ module Hbc
       return [] if current == version
 
       # collect all installed versions that are different than tap version and return them
-      installed.select { |v| v != version }
+      installed.reject { |v| v == version }
     end
 
     def to_s
       @token
     end
+
+    def hash
+      token.hash
+    end
+
+    def eql?(other)
+      token == other.token
+    end
+    alias == eql?
 
     def dumpcask
       odebug "Cask instance dumps in YAML:"

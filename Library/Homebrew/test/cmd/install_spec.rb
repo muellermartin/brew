@@ -23,7 +23,7 @@ describe "brew install", :integration_test do
       .and be_a_success
 
     expect { brew "install", "testball1" }
-      .to output(/testball1\-0\.1 already installed/).to_stderr
+      .to output(/testball1\ 0\.1 is already installed/).to_stderr
       .and not_to_output.to_stdout
       .and be_a_success
 
@@ -51,7 +51,7 @@ describe "brew install", :integration_test do
     install_and_rename_coretap_formula "testball1", "testball2"
     expect { brew "install", "testball2" }
       .to output(/testball1 already installed, it's just not migrated/).to_stderr
-      .and output(/You can migrate formula with `brew migrate testball2`/).to_stdout
+      .and not_to_output.to_stdout
       .and be_a_success
   end
 
@@ -101,13 +101,11 @@ describe "brew install", :integration_test do
       .and not_to_output.to_stderr
       .and be_a_success
 
-    shutup do
-      expect { brew "switch", "testball1", "3.0" }.to be_a_success
-    end
+    expect { brew "switch", "testball1", "3.0" }.to be_a_success
 
     expect { brew "install", "testball1" }
-      .to output(/already installed, however linked version is/).to_stderr
-      .and output(/`brew switch testball1 2.0`/).to_stdout
+      .to output(/2.0 is already installed/).to_stderr
+      .and not_to_output.to_stdout
       .and be_a_success
 
     expect { brew "unlink", "testball1" }
@@ -141,8 +139,8 @@ describe "brew install", :integration_test do
     EOS
 
     expect { brew "install", "testball1" }
-      .to output(/keg-only and another version is linked to opt/).to_stderr
-      .and output(/Use `brew install --force`/).to_stdout
+      .to output(/testball1 1.0 is already installed/).to_stderr
+      .and not_to_output.to_stdout
       .and be_a_success
 
     expect { brew "install", "testball1", "--force" }
@@ -156,14 +154,12 @@ describe "brew install", :integration_test do
     repo_path.join("bin").mkpath
 
     repo_path.cd do
-      shutup do
-        system "git", "init"
-        system "git", "remote", "add", "origin", "https://github.com/Homebrew/homebrew-foo"
-        FileUtils.touch "bin/something.bin"
-        FileUtils.touch "README"
-        system "git", "add", "--all"
-        system "git", "commit", "-m", "Initial repo commit"
-      end
+      system "git", "init"
+      system "git", "remote", "add", "origin", "https://github.com/Homebrew/homebrew-foo"
+      FileUtils.touch "bin/something.bin"
+      FileUtils.touch "README"
+      system "git", "add", "--all"
+      system "git", "commit", "-m", "Initial repo commit"
     end
 
     setup_test_formula "testball1", <<-EOS.undent
@@ -185,7 +181,7 @@ describe "brew install", :integration_test do
       .and be_a_success
 
     expect { brew "install", "testball1", "--HEAD", "--ignore-dependencies" }
-      .to output(/testball1\-HEAD\-d5eb689 already installed/).to_stderr
+      .to output(/testball1 HEAD\-d5eb689 is already installed/).to_stderr
       .and not_to_output.to_stdout
       .and be_a_success
 

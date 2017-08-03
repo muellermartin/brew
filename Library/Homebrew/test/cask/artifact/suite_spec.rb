@@ -10,23 +10,8 @@ describe Hbc::Artifact::Suite, :cask do
     InstallHelper.install_without_artifacts(cask)
   end
 
-  it "moves the suite to the proper directory" do
-    skip("flaky test") # FIXME
-
-    shutup do
-      install_phase.call
-    end
-
-    expect(target_path).to be_a_directory
-    expect(target_path).to be_a_symlink
-    expect(target_path.readlink).to exist
-    expect(source_path).not_to exist
-  end
-
   it "creates a suite containing the expected app" do
-    shutup do
-      install_phase.call
-    end
+    install_phase.call
 
     expect(target_path.join("Caffeine.app")).to exist
   end
@@ -35,9 +20,7 @@ describe Hbc::Artifact::Suite, :cask do
     target_path.mkpath
 
     expect {
-      shutup do
-        install_phase.call
-      end
+      install_phase.call
     }.to raise_error(Hbc::CaskError)
 
     expect(source_path).to be_a_directory

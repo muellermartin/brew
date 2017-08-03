@@ -12,6 +12,12 @@ describe Homebrew::Diagnostic::Checks do
       .to match("Some directories in your path end in a slash")
   end
 
+  specify "#check_build_from_source" do
+    ENV["HOMEBREW_BUILD_FROM_SOURCE"] = "1"
+    expect(subject.check_build_from_source)
+      .to match("You have HOMEBREW_BUILD_FROM_SOURCE set.")
+  end
+
   specify "#check_for_anaconda" do
     mktmpdir do |path|
       anaconda = "#{path}/anaconda"
@@ -88,13 +94,6 @@ describe Homebrew::Diagnostic::Checks do
     ensure
       HOMEBREW_CELLAR.chmod mode
     end
-  end
-
-  specify "#check_homebrew_prefix" do
-    ENV.delete("JENKINS_HOME")
-    # the integration tests are run in a special prefix
-    expect(subject.check_homebrew_prefix)
-      .to match("Your Homebrew's prefix is not /usr/local.")
   end
 
   specify "#check_user_path_1" do

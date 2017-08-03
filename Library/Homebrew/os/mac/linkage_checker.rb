@@ -36,6 +36,7 @@ class LinkageChecker
           rescue NotAKegError
             @system_dylibs << dylib
           rescue Errno::ENOENT
+            next if harmless_broken_link?(dylib)
             @broken_dylibs << dylib
           else
             tap = Tab.for_keg(owner).tap
@@ -62,10 +63,10 @@ class LinkageChecker
     declared_deps = formula.deps.reject { |dep| filter_out.call(dep) }.map(&:name)
     declared_requirement_deps = formula.requirements.reject { |req| filter_out.call(req) }.map(&:default_formula).compact
     declared_dep_names = (declared_deps + declared_requirement_deps).map { |dep| dep.split("/").last }
-    undeclared_deps = @brewed_dylibs.keys.select do |full_name|
+    undeclared_deps = @brewed_dylibs.keys.reject do |full_name|
       name = full_name.split("/").last
-      next false if name == formula.name
-      !declared_dep_names.include?(name)
+      next true if name == formula.name
+      declared_dep_names.include?(name)
     end
     undeclared_deps.sort do |a, b|
       if a.include?("/") && !b.include?("/")
@@ -113,6 +114,17 @@ class LinkageChecker
   end
 
   private
+
+  # Whether or not dylib is a harmless broken link, meaning that it's
+  # okay to skip (and not report) as broken.
+  def harmless_broken_link?(dylib)
+    # libgcc_s_* is referenced by programs that use the Java Service Wrapper,
+    # and is harmless on x86(_64) machines
+    [
+      "/usr/lib/libgcc_s_ppc64.1.dylib",
+      "/opt/local/lib/libgcc/libgcc_s.1.dylib",
+    ].include?(dylib)
+  end
 
   # Display a list of things.
   # Things may either be an array, or a hash of (label -> array)

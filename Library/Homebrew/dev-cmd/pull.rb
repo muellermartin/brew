@@ -14,7 +14,7 @@
 #:
 #:      ~ The URL of a commit on GitHub
 #:
-#:      ~ A "https://bot.brew.sh/job/..." string specifying a testing job ID
+#:      ~ A "https://jenkins.brew.sh/job/..." string specifying a testing job ID
 #:
 #:    If `--bottle` is passed, handle bottles, pulling the bottle-update
 #:    commit and publishing files on Bintray.
@@ -347,7 +347,7 @@ module Homebrew
     formulae = []
     others = []
     File.foreach(patchfile) do |line|
-      files << $1 if line =~ %r{^\+\+\+ b/(.*)}
+      files << Regexp.last_match(1) if line =~ %r{^\+\+\+ b/(.*)}
     end
     files.each do |file|
       if tap && tap.formula_file?(file)
@@ -459,7 +459,7 @@ module Homebrew
     def self.lookup(name)
       json = Utils.popen_read(HOMEBREW_BREW_FILE, "info", "--json=v1", name)
 
-      return nil unless $?.success?
+      return nil unless $CHILD_STATUS.success?
 
       Homebrew.force_utf8!(json)
       FormulaInfoFromJson.new(JSON.parse(json)[0])

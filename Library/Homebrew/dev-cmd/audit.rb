@@ -75,20 +75,26 @@ module Homebrew
 
     only_cops = ARGV.value("only-cops").to_s.split(",")
     except_cops = ARGV.value("except-cops").to_s.split(",")
+
     if !only_cops.empty? && !except_cops.empty?
       odie "--only-cops and --except-cops cannot be used simultaneously!"
-    elsif (!only_cops.empty? || !except_cops.empty?) && strict
-      odie "--only-cops/--except-cops and --strict cannot be used simultaneously"
+    elsif (!only_cops.empty? || !except_cops.empty?) && (strict || ARGV.value("only"))
+      odie "--only-cops/--except-cops and --strict/--only cannot be used simultaneously"
     end
 
     options = { fix: ARGV.flag?("--fix"), realpath: true }
 
     if !only_cops.empty?
       options[:only_cops] = only_cops
+      ARGV.push("--only=style")
+    elsif new_formula
+      nil
+    elsif strict
+      options[:except_cops] = [:NewFormulaAudit]
     elsif !except_cops.empty?
       options[:except_cops] = except_cops
     elsif !strict
-      options[:except_cops] = [:FormulaAuditStrict]
+      options[:only_cops] = [:FormulaAudit]
     end
 
     # Check style in a single batch run up front for performance
@@ -195,12 +201,12 @@ class FormulaAuditor
     @specs = %w[stable devel head].map { |s| formula.send(s) }.compact
   end
 
-  def self.check_http_content(url, user_agents: [:default])
+  def self.check_http_content(url, name, user_agents: [:default])
     return unless url.start_with? "http"
 
     details = nil
     user_agent = nil
-    hash_needed = url.start_with?("http:")
+    hash_needed = url.start_with?("http:") && name != "curl"
     user_agents.each do |ua|
       details = http_content_headers_and_checksum(url, hash_needed: hash_needed, user_agent: ua)
       user_agent = ua
@@ -307,7 +313,7 @@ class FormulaAuditor
         unversioned_name = unversioned_formula.basename(".rb")
         problem "#{formula} is versioned but no #{unversioned_name} formula exists"
       end
-    elsif ARGV.build_stable? &&
+    elsif ARGV.build_stable? && formula.stable? &&
           !(versioned_formulae = Dir[formula.path.to_s.gsub(/\.rb$/, "@*.rb")]).empty?
       versioned_aliases = formula.aliases.grep(/.@\d/)
       _, last_alias_version =
@@ -517,15 +523,6 @@ class FormulaAuditor
         problem "Ambiguous conflicting formula #{c.name.inspect}."
       end
     end
-
-    versioned_conflicts_whitelist = %w[node@ bash-completion@].freeze
-
-    return unless formula.conflicts.any? && formula.versioned_formula?
-    return if formula.name.start_with?(*versioned_conflicts_whitelist)
-    problem <<-EOS
-      Versioned formulae should not use `conflicts_with`.
-      Use `keg_only :versioned_formula` instead.
-    EOS
   end
 
   def audit_keg_only_style
@@ -560,46 +557,17 @@ class FormulaAuditor
     problem "keg_only reason should not end with a period."
   end
 
-  def audit_options
-    formula.options.each do |o|
-      if o.name == "32-bit"
-        problem "macOS has been 64-bit only since 10.6 so 32-bit options are deprecated."
-      end
-
-      next unless @strict
-
-      if o.name == "universal"
-        problem "macOS has been 64-bit only since 10.6 so universal options are deprecated."
-      end
-
-      if o.name !~ /with(out)?-/ && o.name != "c++11" && o.name != "universal"
-        problem "Options should begin with with/without. Migrate '--#{o.name}' with `deprecated_option`."
-      end
-
-      next unless o.name =~ /^with(out)?-(?:checks?|tests)$/
-      unless formula.deps.any? { |d| d.name == "check" && (d.optional? || d.recommended?) }
-        problem "Use '--with#{$1}-test' instead of '--#{o.name}'. Migrate '--#{o.name}' with `deprecated_option`."
-      end
-    end
-
-    return unless @new_formula
-    return if formula.deprecated_options.empty?
-    return if formula.versioned_formula?
-    problem "New formulae should not use `deprecated_option`."
-  end
-
   def audit_homepage
     homepage = formula.homepage
 
-    if homepage.nil? || homepage.empty?
-      return
-    end
+    return if homepage.nil? || homepage.empty?
 
     return unless @online
 
     return unless DevelopmentTools.curl_handles_most_https_homepages?
     if http_content_problem = FormulaAuditor.check_http_content(homepage,
-                                             user_agents: [:browser, :default])
+                                               formula.name,
+                                               user_agents: [:browser, :default])
       problem http_content_problem
     end
   end
@@ -723,7 +691,7 @@ class FormulaAuditor
     stable = formula.stable
     case stable && stable.url
     when /[\d\._-](alpha|beta|rc\d)/
-      matched = $1
+      matched = Regexp.last_match(1)
       version_prefix = stable.version.to_s.sub(/\d+$/, "")
       return if unstable_whitelist.include?([formula.name, version_prefix])
       problem "Stable version URLs should not contain #{matched}"
@@ -818,18 +786,15 @@ class FormulaAuditor
     end
   end
 
-  def audit_legacy_patches
-    return unless formula.respond_to?(:patches)
-    legacy_patches = Patch.normalize_legacy_patches(formula.patches).grep(LegacyPatch)
-
-    return if legacy_patches.empty?
-
-    problem "Use the patch DSL instead of defining a 'patches' method"
-    legacy_patches.each { |p| patch_problems(p) }
-  end
-
   def patch_problems(patch)
     case patch.url
+    when %r{https?://github\.com/.+/.+/(?:commit|pull)/[a-fA-F0-9]*.(?:patch|diff)}
+      unless patch.url =~ /\?full_index=\w+$/
+        problem <<-EOS.undent
+          GitHub patches should use the full_index parameter:
+            #{patch.url}?full_index=1
+        EOS
+      end
     when /raw\.github\.com/, %r{gist\.github\.com/raw}, %r{gist\.github\.com/.+/raw},
       %r{gist\.githubusercontent\.com/.+/raw}
       unless patch.url =~ /[a-fA-F0-9]{40}/
@@ -838,7 +803,7 @@ class FormulaAuditor
     when %r{https?://patch-diff\.githubusercontent\.com/raw/(.+)/(.+)/pull/(.+)\.(?:diff|patch)}
       problem <<-EOS.undent
         use GitHub pull request URLs:
-          https://github.com/#{$1}/#{$2}/pull/#{$3}.patch
+          https://github.com/#{Regexp.last_match(1)}/#{Regexp.last_match(2)}/pull/#{Regexp.last_match(3)}.patch?full_index=1
         Rather than patch-diff:
           #{patch.url}
       EOS
@@ -852,14 +817,6 @@ class FormulaAuditor
   end
 
   def audit_text
-    if text =~ /system\s+['"]scons/
-      problem "use \"scons *args\" instead of \"system 'scons', *args\""
-    end
-
-    if text =~ /system\s+['"]xcodebuild/
-      problem %q(use "xcodebuild *args" instead of "system 'xcodebuild', *args")
-    end
-
     bin_names = Set.new
     bin_names << formula.name
     bin_names += formula.aliases
@@ -874,45 +831,17 @@ class FormulaAuditor
         end
       end
     end
-
-    if text =~ /xcodebuild[ (]*["'*]*/ && !text.include?("SYMROOT=")
-      problem 'xcodebuild should be passed an explicit "SYMROOT"'
-    end
-
-    if text.include? "Formula.factory("
-      problem "\"Formula.factory(name)\" is deprecated in favor of \"Formula[name]\""
-    end
-
-    if text.include?("def plist") && !text.include?("plist_options")
-      problem "Please set plist_options when using a formula-defined plist."
-    end
-
-    if text =~ /depends_on\s+['"]openssl['"]/ && text =~ /depends_on\s+['"]libressl['"]/
-      problem "Formulae should not depend on both OpenSSL and LibreSSL (even optionally)."
-    end
-
-    if text =~ /virtualenv_(create|install_with_resources)/ &&
-       text =~ /resource\s+['"]setuptools['"]\s+do/
-      problem "Formulae using virtualenvs do not need a `setuptools` resource."
-    end
-
-    if text =~ /system\s+['"]go['"],\s+['"]get['"]/
-      problem "Formulae should not use `go get`. If non-vendored resources are required use `go_resource`s."
-    end
-
-    return unless text.include?('require "language/go"') && !text.include?("go_resource")
-    problem "require \"language/go\" is unnecessary unless using `go_resource`s"
   end
 
   def audit_lines
     text.without_patch.split("\n").each_with_index do |line, lineno|
-      line_problems(line, lineno+1)
+      line_problems(line, lineno + 1)
     end
   end
 
   def line_problems(line, _lineno)
     if line =~ /<(Formula|AmazonWebServicesFormula|ScriptFileFormula|GithubGistFormula)/
-      problem "Use a space in class inheritance: class Foo < #{$1}"
+      problem "Use a space in class inheritance: class Foo < #{Regexp.last_match(1)}"
     end
 
     # Commented-out cmake support from default template
@@ -936,79 +865,68 @@ class FormulaAuditor
     # FileUtils is included in Formula
     # encfs modifies a file with this name, so check for some leading characters
     if line =~ %r{[^'"/]FileUtils\.(\w+)}
-      problem "Don't need 'FileUtils.' before #{$1}."
+      problem "Don't need 'FileUtils.' before #{Regexp.last_match(1)}."
     end
 
     # Check for long inreplace block vars
     if line =~ /inreplace .* do \|(.{2,})\|/
-      problem "\"inreplace <filenames> do |s|\" is preferred over \"|#{$1}|\"."
+      problem "\"inreplace <filenames> do |s|\" is preferred over \"|#{Regexp.last_match(1)}|\"."
     end
 
     # Check for string interpolation of single values.
     if line =~ /(system|inreplace|gsub!|change_make_var!).*[ ,]"#\{([\w.]+)\}"/
-      problem "Don't need to interpolate \"#{$2}\" with #{$1}"
+      problem "Don't need to interpolate \"#{Regexp.last_match(2)}\" with #{Regexp.last_match(1)}"
     end
 
     # Check for string concatenation; prefer interpolation
     if line =~ /(#\{\w+\s*\+\s*['"][^}]+\})/
-      problem "Try not to concatenate paths in string interpolation:\n   #{$1}"
+      problem "Try not to concatenate paths in string interpolation:\n   #{Regexp.last_match(1)}"
     end
 
     # Prefer formula path shortcuts in Pathname+
     if line =~ %r{\(\s*(prefix\s*\+\s*(['"])(bin|include|libexec|lib|sbin|share|Frameworks)[/'"])}
-      problem "\"(#{$1}...#{$2})\" should be \"(#{$3.downcase}+...)\""
+      problem "\"(#{Regexp.last_match(1)}...#{Regexp.last_match(2)})\" should be \"(#{Regexp.last_match(3).downcase}+...)\""
     end
 
     if line =~ /((man)\s*\+\s*(['"])(man[1-8])(['"]))/
-      problem "\"#{$1}\" should be \"#{$4}\""
+      problem "\"#{Regexp.last_match(1)}\" should be \"#{Regexp.last_match(4)}\""
     end
 
     # Prefer formula path shortcuts in strings
     if line =~ %r[(\#\{prefix\}/(bin|include|libexec|lib|sbin|share|Frameworks))]
-      problem "\"#{$1}\" should be \"\#{#{$2.downcase}}\""
+      problem "\"#{Regexp.last_match(1)}\" should be \"\#{#{Regexp.last_match(2).downcase}}\""
     end
 
     if line =~ %r[((\#\{prefix\}/share/man/|\#\{man\}/)(man[1-8]))]
-      problem "\"#{$1}\" should be \"\#{#{$3}}\""
+      problem "\"#{Regexp.last_match(1)}\" should be \"\#{#{Regexp.last_match(3)}}\""
     end
 
     if line =~ %r[((\#\{share\}/(man)))[/'"]]
-      problem "\"#{$1}\" should be \"\#{#{$3}}\""
+      problem "\"#{Regexp.last_match(1)}\" should be \"\#{#{Regexp.last_match(3)}}\""
     end
 
     if line =~ %r[(\#\{prefix\}/share/(info|man))]
-      problem "\"#{$1}\" should be \"\#{#{$2}}\""
-    end
-
-    if line =~ /depends_on :(automake|autoconf|libtool)/
-      problem ":#{$1} is deprecated. Usage should be \"#{$1}\""
-    end
-
-    if line =~ /depends_on :apr/
-      problem ":apr is deprecated. Usage should be \"apr-util\""
-    end
-
-    if line =~ /depends_on :tex/
-      problem ":tex is deprecated"
+      problem "\"#{Regexp.last_match(1)}\" should be \"\#{#{Regexp.last_match(2)}}\""
     end
 
     if line =~ /depends_on\s+['"](.+)['"]\s+=>\s+:(lua|perl|python|ruby)(\d*)/
-      problem "#{$2} modules should be vendored rather than use deprecated `depends_on \"#{$1}\" => :#{$2}#{$3}`"
+      problem "#{Regexp.last_match(2)} modules should be vendored rather than use deprecated `depends_on \"#{Regexp.last_match(1)}\" => :#{Regexp.last_match(2)}#{Regexp.last_match(3)}`"
     end
 
     if line =~ /depends_on\s+['"](.+)['"]\s+=>\s+(.*)/
-      dep = $1
-      $2.split(" ").map do |o|
+      dep = Regexp.last_match(1)
+      Regexp.last_match(2).split(" ").map do |o|
+        break if ["if", "unless"].include?(o)
         next unless o =~ /^\[?['"](.*)['"]/
-        problem "Dependency #{dep} should not use option #{$1}"
+        problem "Dependency #{dep} should not use option #{Regexp.last_match(1)}"
       end
     end
 
     # Commented-out depends_on
-    problem "Commented-out dep #{$1}" if line =~ /#\s*depends_on\s+(.+)\s*$/
+    problem "Commented-out dep #{Regexp.last_match(1)}" if line =~ /#\s*depends_on\s+(.+)\s*$/
 
     if line =~ /if\s+ARGV\.include\?\s+'--(HEAD|devel)'/
-      problem "Use \"if build.#{$1.downcase}?\" instead"
+      problem "Use \"if build.#{Regexp.last_match(1).downcase}?\" instead"
     end
 
     problem "Use separate make calls" if line.include?("make && make")
@@ -1021,15 +939,15 @@ class FormulaAuditor
 
     # Avoid hard-coding compilers
     if line =~ %r{(system|ENV\[.+\]\s?=)\s?['"](/usr/bin/)?(gcc|llvm-gcc|clang)['" ]}
-      problem "Use \"\#{ENV.cc}\" instead of hard-coding \"#{$3}\""
+      problem "Use \"\#{ENV.cc}\" instead of hard-coding \"#{Regexp.last_match(3)}\""
     end
 
     if line =~ %r{(system|ENV\[.+\]\s?=)\s?['"](/usr/bin/)?((g|llvm-g|clang)\+\+)['" ]}
-      problem "Use \"\#{ENV.cxx}\" instead of hard-coding \"#{$3}\""
+      problem "Use \"\#{ENV.cxx}\" instead of hard-coding \"#{Regexp.last_match(3)}\""
     end
 
     if line =~ /system\s+['"](env|export)(\s+|['"])/
-      problem "Use ENV instead of invoking '#{$1}' to modify the environment"
+      problem "Use ENV instead of invoking '#{Regexp.last_match(1)}' to modify the environment"
     end
 
     if formula.name != "wine" && line =~ /ENV\.universal_binary/
@@ -1045,27 +963,27 @@ class FormulaAuditor
     end
 
     if line =~ /build\.include\?[\s\(]+['"]\-\-(.*)['"]/
-      problem "Reference '#{$1}' without dashes"
+      problem "Reference '#{Regexp.last_match(1)}' without dashes"
     end
 
     if line =~ /build\.include\?[\s\(]+['"]with(out)?-(.*)['"]/
-      problem "Use build.with#{$1}? \"#{$2}\" instead of build.include? 'with#{$1}-#{$2}'"
+      problem "Use build.with#{Regexp.last_match(1)}? \"#{Regexp.last_match(2)}\" instead of build.include? 'with#{Regexp.last_match(1)}-#{Regexp.last_match(2)}'"
     end
 
     if line =~ /build\.with\?[\s\(]+['"]-?-?with-(.*)['"]/
-      problem "Don't duplicate 'with': Use `build.with? \"#{$1}\"` to check for \"--with-#{$1}\""
+      problem "Don't duplicate 'with': Use `build.with? \"#{Regexp.last_match(1)}\"` to check for \"--with-#{Regexp.last_match(1)}\""
     end
 
     if line =~ /build\.without\?[\s\(]+['"]-?-?without-(.*)['"]/
-      problem "Don't duplicate 'without': Use `build.without? \"#{$1}\"` to check for \"--without-#{$1}\""
+      problem "Don't duplicate 'without': Use `build.without? \"#{Regexp.last_match(1)}\"` to check for \"--without-#{Regexp.last_match(1)}\""
     end
 
     if line =~ /unless build\.with\?(.*)/
-      problem "Use if build.without?#{$1} instead of unless build.with?#{$1}"
+      problem "Use if build.without?#{Regexp.last_match(1)} instead of unless build.with?#{Regexp.last_match(1)}"
     end
 
     if line =~ /unless build\.without\?(.*)/
-      problem "Use if build.with?#{$1} instead of unless build.without?#{$1}"
+      problem "Use if build.with?#{Regexp.last_match(1)} instead of unless build.without?#{Regexp.last_match(1)}"
     end
 
     if line =~ /(not\s|!)\s*build\.with?\?/
@@ -1109,7 +1027,7 @@ class FormulaAuditor
     end
 
     if line =~ /^def (\w+).*$/
-      problem "Define method #{$1.inspect} in the class body, not at the top-level"
+      problem "Define method #{Regexp.last_match(1).inspect} in the class body, not at the top-level"
     end
 
     if line.include?("ENV.fortran") && !formula.requirements.map(&:class).include?(FortranRequirement)
@@ -1121,20 +1039,20 @@ class FormulaAuditor
     end
 
     if line =~ /depends_on :(.+) (if.+|unless.+)$/
-      conditional_dep_problems($1.to_sym, $2, $&)
+      conditional_dep_problems(Regexp.last_match(1).to_sym, Regexp.last_match(2), $&)
     end
 
     if line =~ /depends_on ['"](.+)['"] (if.+|unless.+)$/
-      conditional_dep_problems($1, $2, $&)
+      conditional_dep_problems(Regexp.last_match(1), Regexp.last_match(2), $&)
     end
 
     if line =~ /(Dir\[("[^\*{},]+")\])/
-      problem "#{$1} is unnecessary; just use #{$2}"
+      problem "#{Regexp.last_match(1)} is unnecessary; just use #{Regexp.last_match(2)}"
     end
 
     if line =~ /system (["'](#{FILEUTILS_METHODS})["' ])/o
-      system = $1
-      method = $2
+      system = Regexp.last_match(1)
+      method = Regexp.last_match(2)
       problem "Use the `#{method}` Ruby method instead of `system #{system}`"
     end
 
@@ -1152,7 +1070,7 @@ class FormulaAuditor
     end
 
     if line =~ /system\s+['"](otool|install_name_tool|lipo)/ && formula.name != "cctools"
-      problem "Use ruby-macho instead of calling #{$1}"
+      problem "Use ruby-macho instead of calling #{Regexp.last_match(1)}"
     end
 
     if formula.tap.to_s == "homebrew/core"
@@ -1163,34 +1081,29 @@ class FormulaAuditor
     end
 
     if line =~ /((revision|version_scheme)\s+0)/
-      problem "'#{$1}' should be removed"
+      problem "'#{Regexp.last_match(1)}' should be removed"
     end
 
     return unless @strict
 
-    problem "`#{$1}` in formulae is deprecated" if line =~ /(env :(std|userpaths))/
+    problem "`#{Regexp.last_match(1)}` in formulae is deprecated" if line =~ /(env :(std|userpaths))/
 
     if line =~ /system ((["'])[^"' ]*(?:\s[^"' ]*)+\2)/
-      bad_system = $1
+      bad_system = Regexp.last_match(1)
       unless %w[| < > & ; *].any? { |c| bad_system.include? c }
         good_system = bad_system.gsub(" ", "\", \"")
         problem "Use `system #{good_system}` instead of `system #{bad_system}` "
       end
     end
 
-    problem "`#{$1}` is now unnecessary" if line =~ /(require ["']formula["'])/
+    problem "`#{Regexp.last_match(1)}` is now unnecessary" if line =~ /(require ["']formula["'])/
 
     if line =~ %r{#\{share\}/#{Regexp.escape(formula.name)}[/'"]}
       problem "Use \#{pkgshare} instead of \#{share}/#{formula.name}"
     end
 
     return unless line =~ %r{share(\s*[/+]\s*)(['"])#{Regexp.escape(formula.name)}(?:\2|/)}
-    problem "Use pkgshare instead of (share#{$1}\"#{formula.name}\")"
-  end
-
-  def audit_caveats
-    return unless formula.caveats.to_s.include?("setuid")
-    problem "Don't recommend setuid in the caveats, suggest sudo instead."
+    problem "Use pkgshare instead of (share#{Regexp.last_match(1)}\"#{formula.name}\")"
   end
 
   def audit_reverse_migration
@@ -1289,7 +1202,6 @@ class ResourceAuditor
 
   def audit
     audit_version
-    audit_checksum
     audit_download_strategy
     audit_urls
     self
@@ -1316,31 +1228,9 @@ class ResourceAuditor
     problem "version #{version} should not end with an underline and a number"
   end
 
-  def audit_checksum
-    return unless checksum
-
-    case checksum.hash_type
-    when :md5
-      problem "MD5 checksums are deprecated, please use SHA256"
-      return
-    when :sha1
-      problem "SHA1 checksums are deprecated, please use SHA256"
-      return
-    when :sha256 then len = 64
-    end
-
-    if checksum.empty?
-      problem "#{checksum.hash_type} is empty"
-    else
-      problem "#{checksum.hash_type} should be #{len} characters" unless checksum.hexdigest.length == len
-      problem "#{checksum.hash_type} contains invalid characters" unless checksum.hexdigest =~ /^[a-fA-F0-9]+$/
-      problem "#{checksum.hash_type} should be lowercase" unless checksum.hexdigest == checksum.hexdigest.downcase
-    end
-  end
-
   def audit_download_strategy
     if url =~ %r{^(cvs|bzr|hg|fossil)://} || url =~ %r{^(svn)\+http://}
-      problem "Use of the #{$&} scheme is deprecated, pass `:using => :#{$1}` instead"
+      problem "Use of the #{$&} scheme is deprecated, pass `:using => :#{Regexp.last_match(1)}` instead"
     end
 
     url_strategy = DownloadStrategyDetector.detect(url)
@@ -1382,163 +1272,10 @@ class ResourceAuditor
   end
 
   def audit_urls
-    # Check GNU urls; doesn't apply to mirrors
-    if url =~ %r{^(?:https?|ftp)://ftpmirror.gnu.org/(.*)}
-      problem "Please use \"https://ftp.gnu.org/gnu/#{$1}\" instead of #{url}."
-    end
-
-    if mirrors.include?(url)
-      problem "URL should not be duplicated as a mirror: #{url}"
-    end
-
     urls = [url] + mirrors
 
-    # Check a variety of SSL/TLS URLs that don't consistently auto-redirect
-    # or are overly common errors that need to be reduced & fixed over time.
-    urls.each do |p|
-      case p
-      when %r{^http://ftp\.gnu\.org/},
-           %r{^http://ftpmirror\.gnu\.org/},
-           %r{^http://download\.savannah\.gnu\.org/},
-           %r{^http://download-mirror\.savannah\.gnu\.org/},
-           %r{^http://[^/]*\.apache\.org/},
-           %r{^http://code\.google\.com/},
-           %r{^http://fossies\.org/},
-           %r{^http://mirrors\.kernel\.org/},
-           %r{^http://(?:[^/]*\.)?bintray\.com/},
-           %r{^http://tools\.ietf\.org/},
-           %r{^http://launchpad\.net/},
-           %r{^http://github\.com/},
-           %r{^http://bitbucket\.org/},
-           %r{^http://anonscm\.debian\.org/},
-           %r{^http://cpan\.metacpan\.org/},
-           %r{^http://hackage\.haskell\.org/},
-           %r{^http://(?:[^/]*\.)?archive\.org},
-           %r{^http://(?:[^/]*\.)?freedesktop\.org},
-           %r{^http://(?:[^/]*\.)?mirrorservice\.org/}
-        problem "Please use https:// for #{p}"
-      when %r{^http://search\.mcpan\.org/CPAN/(.*)}i
-        problem "#{p} should be `https://cpan.metacpan.org/#{$1}`"
-      when %r{^(http|ftp)://ftp\.gnome\.org/pub/gnome/(.*)}i
-        problem "#{p} should be `https://download.gnome.org/#{$2}`"
-      when %r{^git://anonscm\.debian\.org/users/(.*)}i
-        problem "#{p} should be `https://anonscm.debian.org/git/users/#{$1}`"
-      end
-    end
-
-    # Prefer HTTP/S when possible over FTP protocol due to possible firewalls.
-    urls.each do |p|
-      case p
-      when %r{^ftp://ftp\.mirrorservice\.org}
-        problem "Please use https:// for #{p}"
-      when %r{^ftp://ftp\.cpan\.org/pub/CPAN(.*)}i
-        problem "#{p} should be `http://search.cpan.org/CPAN#{$1}`"
-      end
-    end
-
-    # Check SourceForge urls
-    urls.each do |p|
-      # Skip if the URL looks like a SVN repo
-      next if p.include? "/svnroot/"
-      next if p.include? "svn.sourceforge"
-
-      # Is it a sourceforge http(s) URL?
-      next unless p =~ %r{^https?://.*\b(sourceforge|sf)\.(com|net)}
-
-      if p =~ /(\?|&)use_mirror=/
-        problem "Don't use #{$1}use_mirror in SourceForge urls (url is #{p})."
-      end
-
-      if p.end_with?("/download")
-        problem "Don't use /download in SourceForge urls (url is #{p})."
-      end
-
-      if p =~ %r{^https?://sourceforge\.}
-        problem "Use https://downloads.sourceforge.net to get geolocation (url is #{p})."
-      end
-
-      if p =~ %r{^https?://prdownloads\.}
-        problem "Don't use prdownloads in SourceForge urls (url is #{p}).\n" \
-                "\tSee: http://librelist.com/browser/homebrew/2011/1/12/prdownloads-is-bad/"
-      end
-
-      if p =~ %r{^http://\w+\.dl\.}
-        problem "Don't use specific dl mirrors in SourceForge urls (url is #{p})."
-      end
-
-      problem "Please use https:// for #{p}" if p.start_with? "http://downloads"
-    end
-
-    # Debian has an abundance of secure mirrors. Let's not pluck the insecure
-    # one out of the grab bag.
-    urls.each do |u|
-      next unless u =~ %r{^http://http\.debian\.net/debian/(.*)}i
-      problem <<-EOS.undent
-        Please use a secure mirror for Debian URLs.
-        We recommend:
-          https://mirrors.ocf.berkeley.edu/debian/#{$1}
-      EOS
-    end
-
-    # Check for Google Code download urls, https:// is preferred
-    # Intentionally not extending this to SVN repositories due to certificate
-    # issues.
-    urls.grep(%r{^http://.*\.googlecode\.com/files.*}) do |u|
-      problem "Please use https:// for #{u}"
-    end
-
-    # Check for new-url Google Code download urls, https:// is preferred
-    urls.grep(%r{^http://code\.google\.com/}) do |u|
-      problem "Please use https:// for #{u}"
-    end
-
-    # Check for git:// GitHub repo urls, https:// is preferred.
-    urls.grep(%r{^git://[^/]*github\.com/}) do |u|
-      problem "Please use https:// for #{u}"
-    end
-
-    # Check for git:// Gitorious repo urls, https:// is preferred.
-    urls.grep(%r{^git://[^/]*gitorious\.org/}) do |u|
-      problem "Please use https:// for #{u}"
-    end
-
-    # Check for http:// GitHub repo urls, https:// is preferred.
-    urls.grep(%r{^http://github\.com/.*\.git$}) do |u|
-      problem "Please use https:// for #{u}"
-    end
-
-    # Check for master branch GitHub archives.
-    urls.grep(%r{^https://github\.com/.*archive/master\.(tar\.gz|zip)$}) do
-      problem "Use versioned rather than branch tarballs for stable checksums."
-    end
-
-    # Use new-style archive downloads
-    urls.each do |u|
-      next unless u =~ %r{https://.*github.*/(?:tar|zip)ball/} && u !~ /\.git$/
-      problem "Use /archive/ URLs for GitHub tarballs (url is #{u})."
-    end
-
-    # Don't use GitHub .zip files
-    urls.each do |u|
-      next unless u =~ %r{https://.*github.*/(archive|releases)/.*\.zip$} && u !~ %r{releases/download}
-      problem "Use GitHub tarballs rather than zipballs (url is #{u})."
-    end
-
-    # Don't use GitHub codeload URLs
-    urls.each do |u|
-      next unless u =~ %r{https?://codeload\.github\.com/(.+)/(.+)/(?:tar\.gz|zip)/(.+)}
-      problem <<-EOS.undent
-        use GitHub archive URLs:
-          https://github.com/#{$1}/#{$2}/archive/#{$3}.tar.gz
-        Rather than codeload:
-          #{u}
-      EOS
-    end
-
-    # Check for Maven Central urls, prefer HTTPS redirector over specific host
-    urls.each do |u|
-      next unless u =~ %r{https?://(?:central|repo\d+)\.maven\.org/maven2/(.+)$}
-      problem "#{u} should be `https://search.maven.org/remotecontent?filepath=#{$1}`"
+    if name == "curl" && !urls.find { |u| u.start_with?("http://") }
+      problem "should always include at least one HTTP url"
     end
 
     return unless @online
@@ -1550,7 +1287,7 @@ class ResourceAuditor
         # A `brew mirror`'ed URL is usually not yet reachable at the time of
         # pull request.
         next if url =~ %r{^https://dl.bintray.com/homebrew/mirror/}
-        if http_content_problem = FormulaAuditor.check_http_content(url)
+        if http_content_problem = FormulaAuditor.check_http_content(url, name)
           problem http_content_problem
         end
       elsif strategy <= GitDownloadStrategy

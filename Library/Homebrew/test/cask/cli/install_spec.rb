@@ -14,9 +14,7 @@ describe Hbc::CLI::Install, :cask do
   end
 
   it "allows staging and activation of multiple Casks at once" do
-    shutup do
-      Hbc::CLI::Install.run("local-transmission", "local-caffeine")
-    end
+    Hbc::CLI::Install.run("local-transmission", "local-caffeine")
 
     expect(Hbc::CaskLoader.load_from_file(TEST_FIXTURE_DIR/"cask/Casks/local-transmission.rb")).to be_installed
     expect(Hbc.appdir.join("Transmission.app")).to be_a_directory
@@ -25,29 +23,21 @@ describe Hbc::CLI::Install, :cask do
   end
 
   it "skips double install (without nuking existing installation)" do
-    shutup do
-      Hbc::CLI::Install.run("local-transmission")
-    end
-    shutup do
-      Hbc::CLI::Install.run("local-transmission")
-    end
+    Hbc::CLI::Install.run("local-transmission")
+    Hbc::CLI::Install.run("local-transmission")
     expect(Hbc::CaskLoader.load_from_file(TEST_FIXTURE_DIR/"cask/Casks/local-transmission.rb")).to be_installed
   end
 
   it "prints a warning message on double install" do
-    shutup do
-      Hbc::CLI::Install.run("local-transmission")
-    end
+    Hbc::CLI::Install.run("local-transmission")
 
     expect {
       Hbc::CLI::Install.run("local-transmission")
-    }.to output(/Warning: A Cask for local-transmission is already installed./).to_stderr
+    }.to output(/Warning: Cask 'local-transmission' is already installed./).to_stderr
   end
 
   it "allows double install with --force" do
-    shutup do
-      Hbc::CLI::Install.run("local-transmission")
-    end
+    Hbc::CLI::Install.run("local-transmission")
 
     expect {
       expect {
@@ -57,9 +47,7 @@ describe Hbc::CLI::Install, :cask do
   end
 
   it "skips dependencies with --skip-cask-deps" do
-    shutup do
-      Hbc::CLI::Install.run("with-depends-on-cask-multiple", "--skip-cask-deps")
-    end
+    Hbc::CLI::Install.run("with-depends-on-cask-multiple", "--skip-cask-deps")
     expect(Hbc::CaskLoader.load_from_file(TEST_FIXTURE_DIR/"cask/Casks/with-depends-on-cask-multiple.rb")).to be_installed
     expect(Hbc::CaskLoader.load_from_file(TEST_FIXTURE_DIR/"cask/Casks/local-caffeine.rb")).not_to be_installed
     expect(Hbc::CaskLoader.load_from_file(TEST_FIXTURE_DIR/"cask/Casks/local-transmission.rb")).not_to be_installed
@@ -67,10 +55,8 @@ describe Hbc::CLI::Install, :cask do
 
   it "properly handles Casks that are not present" do
     expect {
-      shutup do
-        Hbc::CLI::Install.run("notacask")
-      end
-    }.to raise_error(Hbc::CaskError)
+      Hbc::CLI::Install.run("notacask")
+    }.to raise_error(Hbc::CaskError, "Install incomplete.")
   end
 
   it "returns a suggestion for a misspelled Cask" do
@@ -80,7 +66,7 @@ describe Hbc::CLI::Install, :cask do
       rescue Hbc::CaskError
         nil
       end
-    }.to output(/No available Cask for localcaffeine\. Did you mean:\nlocal-caffeine/).to_stderr
+    }.to output(/Cask 'localcaffeine' is unavailable: No Cask with this name exists\. Did you mean:\nlocal-caffeine/).to_stderr
   end
 
   it "returns multiple suggestions for a Cask fragment" do
@@ -90,7 +76,7 @@ describe Hbc::CLI::Install, :cask do
       rescue Hbc::CaskError
         nil
       end
-    }.to output(/No available Cask for local-caf\. Did you mean one of:\nlocal-caffeine/).to_stderr
+    }.to output(/Cask 'local-caf' is unavailable: No Cask with this name exists\. Did you mean one of:\nlocal-caffeine/).to_stderr
   end
 
   describe "when no Cask is specified" do

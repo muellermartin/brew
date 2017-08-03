@@ -14,7 +14,7 @@
 #:    information on all installed formulae.
 #:
 #:    See the docs for examples of using the JSON output:
-#:    <http://docs.brew.sh/Querying-Brew.html>
+#:    <https://docs.brew.sh/Querying-Brew.html>
 
 require "missing_formula"
 require "caveats"
@@ -79,7 +79,7 @@ module Homebrew
 
   def github_remote_path(remote, path)
     if remote =~ %r{^(?:https?://|git(?:@|://))github\.com[:/](.+)/(.+?)(?:\.git)?$}
-      "https://github.com/#{$1}/#{$2}/blob/master/#{path}"
+      "https://github.com/#{Regexp.last_match(1)}/#{Regexp.last_match(2)}/blob/master/#{path}"
     else
       "#{remote}/#{path}"
     end
@@ -169,8 +169,8 @@ module Homebrew
       Homebrew.dump_options_for_formula f
     end
 
-    c = Caveats.new(f)
-    ohai "Caveats", c.caveats unless c.empty?
+    caveats = Caveats.new(f)
+    ohai "Caveats", caveats.to_s unless caveats.empty?
   end
 
   def decorate_dependencies(dependencies)

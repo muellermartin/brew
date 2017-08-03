@@ -93,7 +93,7 @@ module Homebrew
 
   def query_regexp(query)
     case query
-    when %r{^/(.*)/$} then Regexp.new($1)
+    when %r{^/(.*)/$} then Regexp.new(Regexp.last_match(1))
     else /.*#{Regexp.escape(query)}.*/i
     end
   rescue RegexpError
@@ -107,14 +107,14 @@ module Homebrew
       dirname, filename = File.split(match["path"])
       next unless valid_dirnames.include?(dirname)
       tap = Tap.fetch(match["repository"]["full_name"])
-      next if tap.installed?
+      next if tap.installed? && match["repository"]["owner"]["login"] != "caskroom"
       "#{tap.name}/#{File.basename(filename, ".rb")}"
     end.compact
   end
 
   def search_formulae(regex)
     aliases = Formula.alias_full_names
-    results = (Formula.full_names+aliases).grep(regex).sort
+    results = (Formula.full_names + aliases).grep(regex).sort
 
     results.map do |name|
       begin

@@ -194,12 +194,12 @@ module Hbc
       end
 
       def each_resolved_path(action, paths)
+        return enum_for(:each_resolved_path, action, paths) unless block_given?
+
         paths.each do |path|
           resolved_path = Pathname.new(path)
 
-          if path.start_with?("~")
-            resolved_path = resolved_path.expand_path
-          end
+          resolved_path = resolved_path.expand_path if path.start_with?("~")
 
           if resolved_path.relative? || resolved_path.split.any? { |part| part.to_s == ".." }
             opoo "Skipping #{Formatter.identifier(action)} for relative path '#{path}'."
@@ -226,9 +226,38 @@ module Hbc
       end
 
       def uninstall_trash(*paths)
-        # :trash functionality is stubbed as a synonym for :delete
-        # TODO: make :trash work differently, moving files to the Trash
-        uninstall_delete(*paths)
+        return if paths.empty?
+
+        resolved_paths = each_resolved_path(:trash, paths).to_a
+
+        ohai "Trashing files:"
+        puts resolved_paths.map(&:first)
+        trash_paths(*resolved_paths.flat_map(&:last))
+      end
+
+      def trash_paths(*paths)
+        @command.run!("/usr/bin/osascript", args: ["-e", <<-'EOS'.undent, *paths])
+          on run argv
+            repeat with i from 1 to (count argv)
+              set item i of argv to (item i of argv as POSIX file)
+            end repeat
+
+            tell application "Finder"
+              set trashedItems to (move argv to trash)
+              set output to ""
+
+              repeat with i from 1 to (count trashedItems)
+                set trashedItem to POSIX path of (item i of trashedItems as string)
+                set output to output & trashedItem
+                if i < count trashedItems then
+                  set output to output & (do shell script "printf \"\\0\"")
+                end if
+              end repeat
+
+              return output
+            end tell
+          end run
+        EOS
       end
 
       def uninstall_rmdir(*directories)

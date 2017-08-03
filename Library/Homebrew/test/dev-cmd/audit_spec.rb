@@ -174,13 +174,11 @@ describe FormulaAuditor do
     specify "GithubGistFormula", :needs_compat do
       ENV.delete("HOMEBREW_DEVELOPER")
 
-      fa = shutup do
-        formula_auditor "foo", <<-EOS.undent
-          class Foo < GithubGistFormula
-            url "http://example.com/foo-1.0.tgz"
-          end
-        EOS
-      end
+      fa = formula_auditor "foo", <<-EOS.undent
+        class Foo < GithubGistFormula
+          url "http://example.com/foo-1.0.tgz"
+        end
+      EOS
 
       fa.audit_class
       expect(fa.problems)
@@ -305,23 +303,6 @@ describe FormulaAuditor do
     end
   end
 
-  specify "#audit_caveats" do
-    fa = formula_auditor "foo", <<-EOS.undent
-      class Foo < Formula
-        homepage "http://example.com/foo"
-        url "http://example.com/foo-1.0.tgz"
-
-        def caveats
-          "setuid"
-        end
-      end
-    EOS
-
-    fa.audit_caveats
-    expect(fa.problems)
-      .to eq(["Don't recommend setuid in the caveats, suggest sudo instead."])
-  end
-
   describe "#audit_keg_only_style" do
     specify "keg_only_needs_downcasing" do
       fa = formula_auditor "foo", <<-EOS.undent, strict: true
@@ -385,57 +366,6 @@ describe FormulaAuditor do
     end
   end
 
-  describe "#audit_text" do
-    specify "xcodebuild suggests symroot" do
-      fa = formula_auditor "foo", <<-EOS.undent
-        class Foo < Formula
-          url "http://example.com/foo-1.0.tgz"
-          homepage "http://example.com"
-
-          def install
-            xcodebuild "-project", "meow.xcodeproject"
-          end
-        end
-      EOS
-
-      fa.audit_text
-      expect(fa.problems.first)
-        .to match('xcodebuild should be passed an explicit "SYMROOT"')
-    end
-
-    specify "bare xcodebuild also suggests symroot" do
-      fa = formula_auditor "foo", <<-EOS.undent
-        class Foo < Formula
-          url "http://example.com/foo-1.0.tgz"
-          homepage "http://example.com"
-
-          def install
-            xcodebuild
-          end
-        end
-      EOS
-
-      fa.audit_text
-      expect(fa.problems.first)
-        .to match('xcodebuild should be passed an explicit "SYMROOT"')
-    end
-
-    specify "disallow go get usage" do
-      fa = formula_auditor "foo", <<-EOS.undent
-        class Foo <Formula
-          url "http://example.com/foo-1.0.tgz"
-
-          def install
-            system "go", "get", "bar"
-          end
-        end
-      EOS
-      fa.audit_text
-      expect(fa.problems.first)
-        .to match("Formulae should not use `go get`. If non-vendored resources are required use `go_resource`s.")
-    end
-  end
-
   describe "#audit_revision_and_version_scheme" do
     let(:origin_tap_path) { Tap::TAP_DIRECTORY/"homebrew/homebrew-foo" }
     let(:formula_subpath) { "Formula/foo#{@foo_version}.rb" }
@@ -456,18 +386,14 @@ describe FormulaAuditor do
 
       origin_tap_path.mkpath
       origin_tap_path.cd do
-        shutup do
-          system "git", "init"
-          system "git", "add", "--all"
-          system "git", "commit", "-m", "init"
-        end
+        system "git", "init"
+        system "git", "add", "--all"
+        system "git", "commit", "-m", "init"
       end
 
       tap_path.mkpath
       tap_path.cd do
-        shutup do
-          system "git", "clone", origin_tap_path, "."
-        end
+        system "git", "clone", origin_tap_path, "."
       end
     end
 
@@ -491,16 +417,12 @@ describe FormulaAuditor do
       origin_formula_path.write text
 
       origin_tap_path.cd do
-        shutup do
-          system "git", "commit", "-am", "commit"
-        end
+        system "git", "commit", "-am", "commit"
       end
 
       tap_path.cd do
-        shutup do
-          system "git", "fetch"
-          system "git", "reset", "--hard", "origin/master"
-        end
+        system "git", "fetch"
+        system "git", "reset", "--hard", "origin/master"
       end
     end
 

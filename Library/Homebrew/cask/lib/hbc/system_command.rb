@@ -20,7 +20,7 @@ module Hbc
 
     def run!
       @processed_output = { stdout: "", stderr: "" }
-      odebug "Executing: #{expanded_command.utf8_inspect}"
+      odebug "Executing: #{expanded_command}"
 
       each_output_line do |type, line|
         case type
@@ -62,7 +62,7 @@ module Hbc
 
     def assert_success
       return if processed_status && processed_status.success?
-      raise CaskCommandFailedError.new(command.utf8_inspect, processed_output[:stdout], processed_output[:stderr], processed_status)
+      raise CaskCommandFailedError.new(command, processed_output[:stdout], processed_output[:stderr], processed_status)
     end
 
     def expanded_command
@@ -94,7 +94,7 @@ module Hbc
       loop do
         readable_sources = IO.select(sources)[0]
         readable_sources.delete_if(&:eof?).first(1).each do |source|
-          type = (source == sources[0] ? :stdout : :stderr)
+          type = ((source == sources[0]) ? :stdout : :stderr)
           begin
             yield(type, source.readline_nonblock || "")
           rescue IO::WaitReadable, EOFError
@@ -162,7 +162,7 @@ module Hbc
           raise CaskError, <<-EOS
     Empty result parsing plist output from command.
       command was:
-      #{command.utf8_inspect}
+      #{command}
       output we attempted to parse:
       #{output}
           EOS

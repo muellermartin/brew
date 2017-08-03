@@ -1,4 +1,3 @@
-require "forwardable"
 require "resource"
 require "checksum"
 require "version"
@@ -161,8 +160,31 @@ class SoftwareSpec
     dependency_collector.deps
   end
 
+  def recursive_dependencies
+    deps_f = []
+    recursive_dependencies = deps.map do |dep|
+      begin
+        deps_f << dep.to_formula
+        dep
+      rescue TapFormulaUnavailableError
+        # Don't complain about missing cross-tap dependencies
+        next
+      end
+    end.compact.uniq
+    deps_f.compact.each do |f|
+      f.recursive_dependencies.each do |dep|
+        recursive_dependencies << dep unless recursive_dependencies.include?(dep)
+      end
+    end
+    recursive_dependencies
+  end
+
   def requirements
     dependency_collector.requirements
+  end
+
+  def recursive_requirements
+    Requirement.expand(self)
   end
 
   def patch(strip = :p1, src = nil, &block)
@@ -172,7 +194,7 @@ class SoftwareSpec
   end
 
   def fails_with(compiler, &block)
-    # odeprecated "fails_with :llvm" if compiler == :llvm
+    odeprecated "fails_with :llvm" if compiler == :llvm
     compiler_failures << CompilerFailure.create(compiler, &block)
   end
 
@@ -235,7 +257,7 @@ class Bottle
     end
 
     def suffix
-      s = rebuild > 0 ? ".#{rebuild}" : ""
+      s = (rebuild > 0) ? ".#{rebuild}" : ""
       ".bottle#{s}.tar.gz"
     end
   end
